@@ -1,0 +1,44 @@
+name: Build Windows installer
+
+on:
+  # Run manually from the Actions tab on any branch.
+  workflow_dispatch:
+  # Build + attach the installer to a GitHub Release when a version tag is pushed.
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and test
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build installer
+        run: npm run dist:win
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeatFrame-Studio-Windows-Setup
+          path: release/*.exe
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.exe
