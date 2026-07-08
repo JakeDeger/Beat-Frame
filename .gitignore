@@ -7,3 +7,4 @@ release/
 .env
 .vite/
 coverage/
+*.tsbuildinfo
