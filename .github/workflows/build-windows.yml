@@ -1,8 +1,15 @@
 name: Build Windows installer
 
 on:
-  # Run manually from the Actions tab on any branch.
+  # Run manually from the Actions tab on any branch. Providing release_tag
+  # creates (or updates) a GitHub Release with the installer attached — useful
+  # where pushing tags directly isn't possible.
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional release tag (e.g. v1.0.0). When set, a GitHub Release is created with the installer attached.'
+        required: false
+        default: ''
   # Build + attach the installer to a GitHub Release when a version tag is pushed.
   push:
     tags:
@@ -41,8 +48,10 @@ jobs:
           path: release/*.exe
           if-no-files-found: error
 
-      - name: Attach to GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
           files: release/*.exe
+          generate_release_notes: true
