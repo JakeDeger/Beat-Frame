@@ -1,0 +1,45 @@
+appId: studio.beatframe.app
+productName: BeatFrame Studio
+copyright: Copyright © 2026 BeatFrame Studio contributors
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+
+asarUnpack:
+  # FFmpeg binaries must live outside the asar archive so they can be spawned.
+  - node_modules/ffmpeg-static/**
+  - node_modules/ffprobe-static/**
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # Drop build/icon.ico into the repo to brand the installer; electron-builder
+  # falls back to the default Electron icon when absent.
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  shortcutName: BeatFrame Studio
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.video
+
+linux:
+  target:
+    - AppImage
+  category: AudioVideo
+
+publish: null
