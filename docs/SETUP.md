@@ -2,7 +2,7 @@
 
 ## For users (installer)
 
-1. Download and run `BeatFrame Studio-Setup-<version>.exe`.
+1. Download `BeatFrame Studio-Setup-<version>.exe` from the [Releases page](https://github.com/JakeDeger/Beat-Editor/releases) and run it. Windows SmartScreen will warn about an unsigned app on first run — choose **More info → Run anyway**.
 2. Launch BeatFrame Studio. FFmpeg is bundled — nothing else to install.
 3. On the **Home** page:
    - Choose your gameplay recording (`.mp4`, `.mkv`, `.mov`, `.avi`, `.webm`).
