@@ -30,7 +30,7 @@ export interface Api {
   showInFolder(p: string): Promise<unknown>
 
   probeVideo(path: string): Promise<VideoFileInfo>
-  detectEncoders(): Promise<EncoderSupport>
+  detectEncoders(force?: boolean): Promise<EncoderSupport>
 
   lookupMap(mapId: string): Promise<BeatSaverMap>
   lookupPlayer(profileUrl: string): Promise<PlayerProfile>

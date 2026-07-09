@@ -1,9 +1,10 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, screen, shell } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { registerIpcHandlers } from './ipc'
 import { createLogger } from './services/logger'
 import { flushSettings } from './services/settings'
+import { JsonStore } from './services/store'
 import { renderQueue } from './services/render/renderQueue'
 import { uploadQueue } from './services/youtube/uploadQueue'
 import { automation } from './services/automation'
@@ -12,10 +13,42 @@ const log = createLogger('main')
 // Works in both ESM and CJS bundles (Rollup shims import.meta.url for CJS).
 const appDir = path.dirname(fileURLToPath(import.meta.url))
 
-function createWindow(): BrowserWindow {
-  const win = new BrowserWindow({
+interface WindowState {
+  width: number
+  height: number
+  x: number | undefined
+  y: number | undefined
+  maximized: boolean
+}
+
+let windowStore: JsonStore<WindowState> | null = null
+
+function loadWindowState(): WindowState {
+  windowStore ??= new JsonStore<WindowState>('window-state.json', {
     width: 1280,
     height: 820,
+    x: undefined,
+    y: undefined,
+    maximized: false
+  })
+  const state = windowStore.get()
+  // Ignore a saved position that's now off-screen (monitor unplugged etc.).
+  if (state.x !== undefined && state.y !== undefined) {
+    const onScreen = screen
+      .getAllDisplays()
+      .some((d) => state.x! >= d.bounds.x - 100 && state.x! < d.bounds.x + d.bounds.width && state.y! >= d.bounds.y - 100 && state.y! < d.bounds.y + d.bounds.height)
+    if (!onScreen) return { ...state, x: undefined, y: undefined }
+  }
+  return state
+}
+
+function createWindow(): BrowserWindow {
+  const state = loadWindowState()
+  const win = new BrowserWindow({
+    width: state.width,
+    height: state.height,
+    x: state.x,
+    y: state.y,
     minWidth: 980,
     minHeight: 640,
     show: false,
@@ -30,7 +63,22 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    if (state.maximized) win.maximize()
+    win.show()
+  })
+
+  const persistBounds = (): void => {
+    if (win.isDestroyed()) return
+    const maximized = win.isMaximized()
+    const bounds = win.getNormalBounds()
+    windowStore?.set({ width: bounds.width, height: bounds.height, x: bounds.x, y: bounds.y, maximized })
+  }
+  win.on('resized', persistBounds)
+  win.on('moved', persistBounds)
+  win.on('maximize', persistBounds)
+  win.on('unmaximize', persistBounds)
+  win.on('close', persistBounds)
 
   // External links open in the default browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {

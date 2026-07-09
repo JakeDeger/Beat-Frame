@@ -101,7 +101,14 @@ function JobRow({ job }: { job: RenderJob }): React.JSX.Element {
       )}
       {job.status === 'preparing' && <ProgressBar percent={100} indeterminate />}
       {job.status === 'failed' && job.error && (
-        <div className="hint" style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap', userSelect: 'text' }}>{job.error}</div>
+        <div className="hint" style={{ color: 'var(--danger)', userSelect: 'text' }}>
+          {job.error.split('\n')[0]}
+          {job.error.includes('\n') && (
+            <button className="btn btn-ghost btn-sm" style={{ marginLeft: 8, padding: '1px 8px' }} onClick={() => setShowLogs(true)}>
+              details
+            </button>
+          )}
+        </div>
       )}
       {showLogs && <div className="log-box">{job.logs.length > 0 ? job.logs.join('\n') : 'No log output yet.'}</div>}
       {uploadOpen && <UploadDialog job={job} onClose={() => setUploadOpen(false)} />}

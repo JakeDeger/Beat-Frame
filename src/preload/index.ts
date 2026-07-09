@@ -30,7 +30,7 @@ const api = {
 
   // probing / encoders
   probeVideo: (path: string) => invoke(IPC.VIDEO_PROBE, path),
-  detectEncoders: () => invoke(IPC.ENCODERS_DETECT),
+  detectEncoders: (force?: boolean) => invoke(IPC.ENCODERS_DETECT, force === true),
 
   // metadata sources
   lookupMap: (mapId: string) => invoke(IPC.BEATSAVER_LOOKUP, mapId),

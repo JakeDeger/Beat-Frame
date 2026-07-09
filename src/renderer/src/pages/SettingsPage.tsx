@@ -11,14 +11,15 @@ export default function SettingsPage(): React.JSX.Element {
   const [signingIn, setSigningIn] = useState(false)
 
   useEffect(() => {
-    void detect()
+    // Cached on mount; the button below forces a full re-verification.
+    void detect(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const detect = async (): Promise<void> => {
+  const detect = async (force: boolean): Promise<void> => {
     setDetecting(true)
     try {
-      setEncoders(await window.api.detectEncoders())
+      setEncoders(await window.api.detectEncoders(force))
     } catch (err) {
       pushToast(toast('error', 'Encoder detection failed', message(err)))
     } finally {
@@ -119,9 +120,10 @@ export default function SettingsPage(): React.JSX.Element {
           <div className="hint" style={{ userSelect: 'text' }}>
             {encoders.ffmpegPath ? (
               <>
-                FFmpeg {encoders.ffmpegVersion ?? ''} detected. Available encoders:{' '}
+                FFmpeg {encoders.ffmpegVersion ?? ''} detected. Verified encoders:{' '}
                 {Object.entries(encoders.encoders).filter(([, ok]) => ok).map(([name]) => name).join(', ') || 'none found'}
-                . If a GPU encoder fails mid-render, BeatFrame automatically falls back to software encoding.
+                . Hardware encoders are test-verified on this machine; if one still fails mid-render, BeatFrame
+                automatically falls back to software encoding.
               </>
             ) : (
               <span style={{ color: 'var(--danger)' }}>
@@ -130,8 +132,8 @@ export default function SettingsPage(): React.JSX.Element {
             )}
           </div>
         )}
-        <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => void detect()} disabled={detecting}>
-          {detecting ? 'Detecting…' : 'Re-detect encoders'}
+        <button className="btn btn-sm" style={{ marginTop: 10 }} onClick={() => void detect(true)} disabled={detecting}>
+          {detecting ? 'Verifying encoders…' : 'Re-detect encoders'}
         </button>
       </div>
 

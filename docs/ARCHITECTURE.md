@@ -79,3 +79,14 @@ Every handler returns `{ok:true,value}|{ok:false,error}`; the preload bridge ret
 - **Electron over Tauri** — Node-side FFmpeg orchestration, offscreen HTML card capture, googleless OAuth loopback and chokidar all live comfortably in the main process; Rust sidecars would add friction without user-visible gain.
 - **No heavyweight deps** — settings store, logger and the YouTube REST client are small hand-rolled modules (~100 lines each) instead of `electron-store`/`googleapis`, keeping the install slim and immune to upstream ESM churn.
 - **Pure core** — everything that matters (plan builder, metadata generator, parsers, progress parsing) is a pure function, unit-tested; Electron-facing modules are thin shells. Integration tests execute the real generated FFmpeg commands when FFmpeg is available.
+
+## Live-app smoke test
+
+`scripts/smoke-e2e.mjs` drives the **built** app with Playwright (`npm run build` first; on headless Linux run under `xvfb-run -a`): it screenshots every page, generates real card previews through the offscreen-capture pipeline, then runs a long-form and a Short render end-to-end through the app's own queue against the live BeatSaver API, writing screenshots, previews, rendered videos and a `jobs.json` summary to the output directory:
+
+```bash
+npm run build
+xvfb-run -a node scripts/smoke-e2e.mjs . /tmp/beatframe-smoke   # optional 3rd arg: a real recording
+```
+
+This catches the class of bugs unit tests can't — e.g. hardware encoders that the ffmpeg build advertises but the machine can't run, and real-world dirty map metadata.

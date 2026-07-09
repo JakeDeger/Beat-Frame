@@ -86,7 +86,8 @@ export function registerIpcHandlers(): void {
 
   // --- probing / encoders ---
   handle(IPC.VIDEO_PROBE, (filePath: string) => probeVideo(filePath))
-  handle(IPC.ENCODERS_DETECT, () => detectEncoders(true))
+  // force=true re-runs the (test-encode) hardware verification; plain loads use the cache.
+  handle(IPC.ENCODERS_DETECT, (force: boolean) => detectEncoders(force === true))
 
   // --- metadata sources ---
   handle(IPC.BEATSAVER_LOOKUP, (mapId: string) => lookupMap(mapId))
