@@ -1,5 +1,6 @@
-import { Palette, Type, Image as ImageIcon, Clock } from 'lucide-react'
-import { useApp } from '../store'
+import { useState } from 'react'
+import { Palette, Type, Image as ImageIcon, Clock, Eye, Loader2 } from 'lucide-react'
+import { useApp, toast, message } from '../store'
 import { Field, PickerRow, Switch } from '../components/ui'
 
 /**
@@ -22,6 +23,8 @@ export default function TemplatesPage(): React.JSX.Element {
         </div>
         <IntroPreview />
       </div>
+
+      <RealPreviewCard />
 
       <div className="card">
         <div className="card-title">
@@ -157,6 +160,70 @@ export default function TemplatesPage(): React.JSX.Element {
           YouTube Studio after upload.
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Renders the REAL cards (same pipeline as a render) with live BeatSaver data
+ * so users can verify their template before spending a full encode on it.
+ */
+function RealPreviewCard(): React.JSX.Element {
+  const { pushToast } = useApp()
+  const [mapId, setMapId] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [image, setImage] = useState<{ src: string; vertical: boolean } | null>(null)
+
+  const generate = async (kind: 'intro' | 'intro-short' | 'outro' | 'thumbnail'): Promise<void> => {
+    setBusy(kind)
+    try {
+      const src = await window.api.cardPreview(kind, mapId)
+      setImage({ src, vertical: kind === 'intro-short' })
+    } catch (err) {
+      pushToast(toast('error', 'Preview failed', message(err)))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const btn = (kind: 'intro' | 'intro-short' | 'outro' | 'thumbnail', label: string): React.JSX.Element => (
+    <button className="btn btn-sm" disabled={busy !== null} onClick={() => void generate(kind)}>
+      {busy === kind ? <Loader2 className="spin" size={13} /> : <Eye size={13} />} {label}
+    </button>
+  )
+
+  return (
+    <div className="card">
+      <div className="card-title">
+        <Eye size={16} /> Preview with real data
+      </div>
+      <div className="hint" style={{ marginBottom: 10 }}>
+        Generates the exact cards a render would produce — cover art, player profile and score included. Leave the map
+        ID empty to use sample data.
+      </div>
+      <div className="input-group" style={{ marginBottom: 12 }}>
+        <input
+          className="input"
+          placeholder="BeatSaver map ID (optional, e.g. 25f)"
+          value={mapId}
+          onChange={(e) => setMapId(e.target.value)}
+          spellCheck={false}
+          style={{ maxWidth: 280 }}
+        />
+        {btn('intro', 'Intro')}
+        {btn('intro-short', 'Short intro')}
+        {btn('outro', 'End screen')}
+        {btn('thumbnail', 'Thumbnail')}
+      </div>
+      {image && (
+        <div style={{ display: 'flex', justifyContent: 'center', background: '#05070c', borderRadius: 'var(--radius)', border: '1px solid var(--border)', padding: 12 }}>
+          <img
+            src={image.src}
+            alt="Card preview"
+            style={{ maxWidth: image.vertical ? 300 : '100%', width: image.vertical ? 300 : undefined, borderRadius: 8 }}
+          />
+        </div>
+      )}
     </div>
   )
 }

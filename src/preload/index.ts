@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC, EVENTS } from '@shared/ipc'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -36,6 +36,10 @@ const api = {
   lookupMap: (mapId: string) => invoke(IPC.BEATSAVER_LOOKUP, mapId),
   lookupPlayer: (profileUrl: string) => invoke(IPC.PLAYER_LOOKUP, profileUrl),
   generateMetadata: (input: unknown) => invoke(IPC.METADATA_GENERATE, input),
+  cardPreview: (kind: string, mapId: string) => invoke<string>(IPC.CARD_PREVIEW, kind, mapId),
+
+  // drag & drop: resolve the OS path of a dropped File object
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
 
   // render queue
   enqueueRender: (request: unknown) => invoke(IPC.RENDER_ENQUEUE, request),

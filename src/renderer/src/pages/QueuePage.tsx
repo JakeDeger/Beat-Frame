@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { FolderOpen, ListVideo, ScrollText, Trash2, UploadCloud, X } from 'lucide-react'
+import { FolderOpen, ListVideo, Play, ScrollText, Trash2, UploadCloud, X } from 'lucide-react'
 import type { RenderJob } from '@shared/types'
-import { useApp, formatEta, toast, message } from '../store'
+import { useApp, formatEta } from '../store'
 import { EmptyState, ProgressBar, StatusBadge } from '../components/ui'
+import { UploadDialog } from '../components/UploadDialog'
 
 const ACTIVE = new Set(['queued', 'preparing', 'rendering', 'finalizing'])
 
@@ -41,38 +42,9 @@ export default function QueuePage(): React.JSX.Element {
 
 function JobRow({ job }: { job: RenderJob }): React.JSX.Element {
   const [showLogs, setShowLogs] = useState(false)
-  const { pushToast, setPage } = useApp()
+  const [uploadOpen, setUploadOpen] = useState(false)
   const active = ACTIVE.has(job.status)
   const title = job.map ? `${job.map.songName} — ${job.map.songAuthorName}` : job.request.videoPath.split(/[\\/]/).pop()
-
-  const upload = async (): Promise<void> => {
-    // Pre-fill an upload with generated metadata and send it to the Uploads page.
-    try {
-      if (!job.map || !job.outputPath) return
-      const settings = useApp.getState().settings!
-      const metadata = await window.api.generateMetadata({
-        map: job.map,
-        player: job.player,
-        playerName: job.request.playerName,
-        mode: job.request.mode,
-        extraKeywords: settings.extraKeywords,
-        channelName: settings.template.channelName
-      })
-      await window.api.enqueueUpload({
-        videoPath: job.outputPath,
-        thumbnailPath: job.request.mode === 'longform' ? job.thumbnailPath : null,
-        metadata,
-        privacy: 'private',
-        publishAt: null,
-        playlistId: null,
-        isShort: job.request.mode === 'short'
-      })
-      pushToast(toast('success', 'Upload queued', 'Uploading as Private — publish it from YouTube Studio when ready.'))
-      setPage('uploads')
-    } catch (err) {
-      pushToast(toast('error', 'Could not queue upload', message(err)))
-    }
-  }
 
   return (
     <div className="job">
@@ -83,16 +55,20 @@ function JobRow({ job }: { job: RenderJob }): React.JSX.Element {
           <div className="job-sub">
             {job.request.mode === 'short' ? 'YouTube Short' : 'Long-form'} ·{' '}
             {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {job.score && <> · 🎯 {(job.score.accuracy * 100).toFixed(2)}%</>}
           </div>
         </div>
         <StatusBadge status={job.status} spinning={active && job.status !== 'queued'} />
         <div className="job-actions">
           {job.status === 'completed' && job.outputPath && (
             <>
+              <button className="btn btn-sm" title="Play" onClick={() => void window.api.openPath(job.outputPath!)}>
+                <Play size={13} />
+              </button>
               <button className="btn btn-sm" title="Show in folder" onClick={() => void window.api.showInFolder(job.outputPath!)}>
                 <FolderOpen size={13} />
               </button>
-              <button className="btn btn-sm" title="Upload to YouTube" onClick={() => void upload()}>
+              <button className="btn btn-sm" title="Upload to YouTube" onClick={() => setUploadOpen(true)}>
                 <UploadCloud size={13} />
               </button>
             </>
@@ -128,6 +104,7 @@ function JobRow({ job }: { job: RenderJob }): React.JSX.Element {
         <div className="hint" style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap', userSelect: 'text' }}>{job.error}</div>
       )}
       {showLogs && <div className="log-box">{job.logs.length > 0 ? job.logs.join('\n') : 'No log output yet.'}</div>}
+      {uploadOpen && <UploadDialog job={job} onClose={() => setUploadOpen(false)} />}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import type {
   BeatSaverMap,
   EncoderSupport,
   PlayerProfile,
+  PlayerScore,
   RenderJob,
   RenderRequest,
   UpdateInfo,
@@ -40,7 +41,10 @@ export interface Api {
     mode: 'longform' | 'short'
     extraKeywords: string[]
     channelName: string
+    score?: PlayerScore | null
   }): Promise<VideoMetadata>
+  cardPreview(kind: 'intro' | 'intro-short' | 'outro' | 'thumbnail', mapId: string): Promise<string>
+  pathForFile(file: File): string
 
   enqueueRender(request: RenderRequest): Promise<RenderJob>
   cancelRender(id: string): Promise<void>

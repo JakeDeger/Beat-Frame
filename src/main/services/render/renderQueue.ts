@@ -3,7 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { randomUUID } from 'crypto'
 import { EVENTS } from '@shared/ipc'
-import type { BeatSaverMap, PlayerProfile, RenderJob, RenderRequest, TemplateConfig } from '@shared/types'
+import type { BeatSaverMap, PlayerProfile, PlayerScore, RenderJob, RenderRequest, TemplateConfig } from '@shared/types'
 import { JsonStore } from '../store'
 import { createLogger } from '../logger'
 import { broadcast, notify } from '../events'
@@ -20,7 +20,8 @@ import {
   type BackdropOffsets
 } from './plan'
 import { lookupMap, bestDifficulty } from '../beatsaver'
-import { lookupPlayer, playerAvatarPath } from '../players'
+import { fetchBeatLeaderScore, formatAccuracy, lookupPlayer, playerAvatarPath } from '../players'
+import { findLoudestOffset } from '../ffmpeg/loudness'
 import { introCardHtml, outroCardHtml, shortIntroCardHtml, thumbnailHtml, type CardData } from './cardsHtml'
 import { captureHtmlToPng, captureHtmlToJpeg, fileToDataUri } from './capture'
 
@@ -76,6 +77,7 @@ class RenderQueue {
       thumbnailPath: null,
       map: null,
       player: null,
+      score: null,
       error: null,
       createdAt: Date.now(),
       startedAt: null,
@@ -146,7 +148,7 @@ class RenderQueue {
       const source = await probeVideo(req.videoPath)
       this.appendLog(job, `Probed: ${source.width}x${source.height} @ ${source.fps}fps, ${Math.round(source.durationSec)}s`)
 
-      // 2. Metadata lookups (player is optional and non-fatal).
+      // 2. Metadata lookups (player and score are optional and non-fatal).
       const map = await lookupMap(req.mapId)
       job.map = map
       let player: PlayerProfile | null = null
@@ -158,11 +160,40 @@ class RenderQueue {
           this.appendLog(job, `Player profile lookup failed (continuing): ${err instanceof Error ? err.message : err}`)
         }
       }
+      let score: PlayerScore | null = null
+      if (player?.platform === 'beatleader' && map.hash) {
+        const diff = bestDifficulty(map.difficulties)
+        if (diff) {
+          score = await fetchBeatLeaderScore(player.id, map.hash, diff.difficulty, diff.characteristic)
+          job.score = score
+          if (score) this.appendLog(job, `Found BeatLeader score: ${formatAccuracy(score.accuracy)}${score.rank > 0 ? ` (#${score.rank})` : ''}`)
+        }
+      }
       this.changed()
+
+      // 2b. Shorts: pick the most intense section automatically when asked.
+      if (req.mode === 'short' && req.short.autoHighlight && source.audioCodec) {
+        const usable = source.durationSec - req.trim.trimStartSec - req.trim.trimEndSec
+        const windowSec = Math.min(req.short.durationSec, Math.max(10, usable))
+        if (usable > windowSec + 5) {
+          const best = await findLoudestOffset(req.videoPath, {
+            rangeStartSec: req.trim.trimStartSec,
+            rangeEndSec: source.durationSec - req.trim.trimEndSec,
+            windowSec: Math.min(windowSec, 45),
+            candidates: 6
+          })
+          if (best !== null) {
+            // Clamp so the full Short still fits after the chosen start.
+            const maxStart = Math.max(0, usable - req.short.durationSec)
+            req.short.startOffsetSec = Math.min(Math.max(0, best - req.trim.trimStartSec), maxStart)
+            this.appendLog(job, `Auto-highlight: Short starts at ${req.short.startOffsetSec.toFixed(1)}s (loudest section)`)
+          }
+        }
+      }
 
       // 3. Render title cards at output resolution.
       const dims = computeOutputDims(source, req.mode, settings.render.resolution)
-      const cardData = buildCardData(map, player, req.playerName, settings.template)
+      const cardData = buildCardData(map, player, score, req.playerName, settings.template)
       const workDir = path.join(app.getPath('userData'), 'work', job.id)
       fs.mkdirSync(workDir, { recursive: true })
 
@@ -180,8 +211,9 @@ class RenderQueue {
       const outputPath = this.outputPathFor(req, map)
       fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
-      // Random blurred-gameplay backdrop positions, chosen once per job so a
-      // hardware-fallback retry renders the identical video.
+      // Blurred-gameplay backdrop positions: prefer loud (intense) sections,
+      // falling back to seeded-random offsets when the audio can't be read.
+      // Chosen once per job so a hardware-fallback retry renders identically.
       let backdrop: BackdropOffsets | null = null
       if (settings.template.blurredBackdrop) {
         const timeline = computeTimeline({
@@ -192,6 +224,29 @@ class RenderQueue {
           template: settings.template
         })
         backdrop = pickBackdropOffsets(source.durationSec, timeline)
+        if (source.audioCodec) {
+          const dur = source.durationSec
+          const introWin = timeline.introDurationSec + 0.5
+          const outroWin = (timeline.outroStartSec !== null ? timeline.durationSec - timeline.outroStartSec : 0) + 0.5
+          const [loudIntro, loudOutro] = await Promise.all([
+            findLoudestOffset(req.videoPath, {
+              rangeStartSec: dur * 0.15,
+              rangeEndSec: dur * 0.55 + introWin,
+              windowSec: introWin,
+              candidates: 5
+            }),
+            timeline.outroStartSec !== null
+              ? findLoudestOffset(req.videoPath, {
+                  rangeStartSec: dur * 0.5,
+                  rangeEndSec: dur * 0.92 + outroWin,
+                  windowSec: outroWin,
+                  candidates: 5
+                })
+              : Promise.resolve(null)
+          ])
+          if (loudIntro !== null) backdrop.introOffsetSec = Math.min(loudIntro, Math.max(0, dur - introWin))
+          if (loudOutro !== null) backdrop.outroOffsetSec = Math.min(loudOutro, Math.max(0, dur - outroWin))
+        }
         this.appendLog(
           job,
           `Backdrop clips: intro @ ${backdrop.introOffsetSec.toFixed(1)}s, outro @ ${backdrop.outroOffsetSec.toFixed(1)}s`
@@ -351,6 +406,7 @@ export function sanitizeFileName(name: string): string {
 export function buildCardData(
   map: BeatSaverMap,
   player: PlayerProfile | null,
+  score: PlayerScore | null,
   playerNameOverride: string,
   template: TemplateConfig
 ): CardData {
@@ -364,6 +420,7 @@ export function buildCardData(
     coverDataUri: fileToDataUri(map.coverPath),
     avatarDataUri: player ? fileToDataUri(playerAvatarPath(player)) : '',
     logoDataUri: fileToDataUri(template.logoPath || null),
+    accuracy: score ? formatAccuracy(score.accuracy) : null,
     hasVideoBackdrop: template.blurredBackdrop,
     template
   }

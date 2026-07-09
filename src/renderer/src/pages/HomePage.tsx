@@ -24,6 +24,8 @@ export default function HomePage(): React.JSX.Element {
   const [shortStart, setShortStart] = useState('0')
   const [shortDuration, setShortDuration] = useState('60')
   const [cropBias, setCropBias] = useState('0')
+  const [autoHighlight, setAutoHighlight] = useState(true)
+  const [dragging, setDragging] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const mapLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -71,9 +73,7 @@ export default function HomePage(): React.JSX.Element {
 
   if (!settings) return <div />
 
-  const pickVideo = async (): Promise<void> => {
-    const path = await window.api.pickVideo()
-    if (!path) return
+  const loadVideo = async (path: string): Promise<void> => {
     setVideoPath(path)
     setVideoInfo(null)
     setVideoError('')
@@ -90,6 +90,28 @@ export default function HomePage(): React.JSX.Element {
       }
     } catch (err) {
       setVideoError(message(err))
+    }
+  }
+
+  const pickVideo = async (): Promise<void> => {
+    const path = await window.api.pickVideo()
+    if (path) await loadVideo(path)
+  }
+
+  const onDrop = (e: React.DragEvent): void => {
+    e.preventDefault()
+    setDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (!file) return
+    if (!/\.(mp4|mkv|mov|avi|webm)$/i.test(file.name)) {
+      pushToast(toast('warning', 'Unsupported file', 'Drop a video file (.mp4, .mkv, .mov, .avi, .webm).'))
+      return
+    }
+    try {
+      const path = window.api.pathForFile(file)
+      if (path) void loadVideo(path)
+    } catch (err) {
+      pushToast(toast('error', 'Could not read the dropped file', message(err)))
     }
   }
 
@@ -113,7 +135,8 @@ export default function HomePage(): React.JSX.Element {
         short: {
           startOffsetSec: Number(shortStart) || DEFAULT_SHORT.startOffsetSec,
           durationSec: Number(shortDuration) || DEFAULT_SHORT.durationSec,
-          cropBias: Math.max(-1, Math.min(1, Number(cropBias) || 0))
+          cropBias: Math.max(-1, Math.min(1, Number(cropBias) || 0)),
+          autoHighlight
         },
         generateThumbnail: mode === 'longform'
       })
@@ -131,12 +154,21 @@ export default function HomePage(): React.JSX.Element {
       <div className="page-title">Create a video</div>
       <div className="page-subtitle">Import a recording, confirm the map, hit render. That&rsquo;s it.</div>
 
-      <div className="card">
+      <div
+        className="card"
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        style={dragging ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 3px rgba(255,45,120,0.15)' } : undefined}
+      >
         <div className="card-title">
           <Clapperboard size={16} /> Recording
         </div>
-        <Field label="Gameplay video">
-          <PickerRow value={videoPath} placeholder="Choose your Beat Saber recording…" onPick={() => void pickVideo()} />
+        <Field label="Gameplay video" hint={videoPath ? undefined : 'Tip: you can also drag & drop a video anywhere on this card.'}>
+          <PickerRow value={videoPath} placeholder="Choose or drop your Beat Saber recording…" onPick={() => void pickVideo()} />
           {videoInfo && (
             <div className="hint">
               {videoInfo.width}×{videoInfo.height} · {videoInfo.fps} fps · {formatDuration(videoInfo.durationSec)} ·{' '}
@@ -259,17 +291,24 @@ export default function HomePage(): React.JSX.Element {
               </Field>
             </div>
             {mode === 'short' && (
-              <div className="row">
-                <Field label="Short starts at (seconds)" hint="Seconds into the (trimmed) gameplay.">
-                  <input className="input" type="number" min={0} value={shortStart} onChange={(e) => setShortStart(e.target.value)} />
-                </Field>
-                <Field label="Short length (seconds)" hint="Up to 180 seconds.">
-                  <input className="input" type="number" min={5} max={180} value={shortDuration} onChange={(e) => setShortDuration(e.target.value)} />
-                </Field>
-                <Field label="Crop position" hint="-1 = left · 0 = center · 1 = right">
-                  <input className="input" type="number" min={-1} max={1} step={0.1} value={cropBias} onChange={(e) => setCropBias(e.target.value)} />
-                </Field>
-              </div>
+              <>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 12px', cursor: 'pointer', fontWeight: 600 }}>
+                  <input type="checkbox" checked={autoHighlight} onChange={(e) => setAutoHighlight(e.target.checked)} />
+                  Start at the most intense section automatically
+                  <span className="hint" style={{ fontWeight: 400 }}>(analyzes the audio for the loudest part)</span>
+                </label>
+                <div className="row">
+                  <Field label="Short starts at (seconds)" hint={autoHighlight ? 'Chosen automatically.' : 'Seconds into the (trimmed) gameplay.'}>
+                    <input className="input" type="number" min={0} value={shortStart} disabled={autoHighlight} onChange={(e) => setShortStart(e.target.value)} />
+                  </Field>
+                  <Field label="Short length (seconds)" hint="Up to 180 seconds.">
+                    <input className="input" type="number" min={5} max={180} value={shortDuration} onChange={(e) => setShortDuration(e.target.value)} />
+                  </Field>
+                  <Field label="Crop position" hint="-1 = left · 0 = center · 1 = right">
+                    <input className="input" type="number" min={-1} max={1} step={0.1} value={cropBias} onChange={(e) => setCropBias(e.target.value)} />
+                  </Field>
+                </div>
+              </>
             )}
           </div>
         )}

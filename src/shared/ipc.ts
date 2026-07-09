@@ -35,6 +35,9 @@ export const IPC = {
   // Metadata
   METADATA_GENERATE: 'metadata:generate',
 
+  // Card previews
+  CARD_PREVIEW: 'card:preview',
+
   // YouTube
   YT_AUTH_START: 'yt:authStart',
   YT_AUTH_STATUS: 'yt:authStatus',

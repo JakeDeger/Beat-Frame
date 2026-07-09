@@ -256,7 +256,8 @@ class AutomationService {
         playerName: settings.playerName,
         mode: item.mode,
         extraKeywords: settings.extraKeywords,
-        channelName: settings.template.channelName
+        channelName: settings.template.channelName,
+        score: job.score ?? null
       })
     }
 

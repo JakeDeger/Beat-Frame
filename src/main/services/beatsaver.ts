@@ -41,7 +41,7 @@ interface ApiMapVersionDiff {
   stars?: number
 }
 
-interface ApiMap {
+export interface ApiMap {
   id: string
   name?: string
   uploaded?: string
@@ -54,9 +54,37 @@ interface ApiMap {
     duration?: number
   }
   versions?: Array<{
+    hash?: string
     coverURL?: string
     diffs?: ApiMapVersionDiff[]
   }>
+}
+
+/** Pure conversion from the BeatSaver API shape to our domain model. */
+export function mapFromApi(raw: ApiMap, fallbackId: string): BeatSaverMap {
+  const meta = raw.metadata ?? {}
+  const version = raw.versions?.[0]
+  const difficulties: MapDifficulty[] = (version?.diffs ?? []).map((d) => ({
+    characteristic: d.characteristic ?? 'Standard',
+    difficulty: normalizeDifficulty(d.difficulty ?? ''),
+    njs: d.njs ?? 0,
+    nps: Math.round((d.nps ?? 0) * 100) / 100,
+    stars: d.stars
+  }))
+  return {
+    id: raw.id ?? fallbackId,
+    name: raw.name ?? meta.songName ?? fallbackId,
+    songName: meta.songName ?? raw.name ?? 'Unknown Song',
+    songSubName: meta.songSubName ?? '',
+    songAuthorName: meta.songAuthorName ?? 'Unknown Artist',
+    levelAuthorName: meta.levelAuthorName ?? 'Unknown Mapper',
+    bpm: meta.bpm ?? 0,
+    durationSec: meta.duration ?? 0,
+    coverUrl: version?.coverURL ?? '',
+    hash: (version?.hash ?? '').toLowerCase(),
+    difficulties,
+    uploadedAt: raw.uploaded
+  }
 }
 
 export async function lookupMap(mapId: string): Promise<BeatSaverMap> {
@@ -79,29 +107,7 @@ export async function lookupMap(mapId: string): Promise<BeatSaverMap> {
     )
   }
 
-  const meta = raw.metadata ?? {}
-  const version = raw.versions?.[0]
-  const difficulties: MapDifficulty[] = (version?.diffs ?? []).map((d) => ({
-    characteristic: d.characteristic ?? 'Standard',
-    difficulty: normalizeDifficulty(d.difficulty ?? ''),
-    njs: d.njs ?? 0,
-    nps: Math.round((d.nps ?? 0) * 100) / 100,
-    stars: d.stars
-  }))
-
-  const map: BeatSaverMap = {
-    id: raw.id ?? id,
-    name: raw.name ?? meta.songName ?? id,
-    songName: meta.songName ?? raw.name ?? 'Unknown Song',
-    songSubName: meta.songSubName ?? '',
-    songAuthorName: meta.songAuthorName ?? 'Unknown Artist',
-    levelAuthorName: meta.levelAuthorName ?? 'Unknown Mapper',
-    bpm: meta.bpm ?? 0,
-    durationSec: meta.duration ?? 0,
-    coverUrl: version?.coverURL ?? '',
-    difficulties,
-    uploadedAt: raw.uploaded
-  }
+  const map = mapFromApi(raw, id)
 
   // Download cover art for title cards / thumbnails; non-fatal when it fails.
   if (map.coverUrl) {

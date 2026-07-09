@@ -3,7 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { fetchJson, downloadFile, HttpError } from './http'
 import { createLogger } from './logger'
-import type { PlayerPlatform, PlayerProfile } from '@shared/types'
+import type { PlayerPlatform, PlayerProfile, PlayerScore } from '@shared/types'
 
 const log = createLogger('players')
 
@@ -122,4 +122,54 @@ export async function lookupPlayer(profileUrl: string): Promise<PlayerProfile> {
 export function playerAvatarPath(profile: PlayerProfile): string | null {
   const p = (profile as PlayerProfile & { avatarPath?: string }).avatarPath
   return p && fs.existsSync(p) ? p : null
+}
+
+// ---------------------------------------------------------------------------
+// Scores
+// ---------------------------------------------------------------------------
+
+/** Convert our display difficulty names to BeatLeader API identifiers. */
+export function difficultyToBeatLeader(difficulty: string): string {
+  const table: Record<string, string> = {
+    'Expert+': 'ExpertPlus',
+    Expert: 'Expert',
+    Hard: 'Hard',
+    Normal: 'Normal',
+    Easy: 'Easy'
+  }
+  return table[difficulty] ?? difficulty.replace(/\+$/, 'Plus').replace(/\s+/g, '')
+}
+
+interface BeatLeaderScore {
+  accuracy?: number
+  rank?: number
+}
+
+/**
+ * Fetch the player's own score for a map (BeatLeader only). Returns null when
+ * the player has no score there — callers treat this as purely optional data.
+ */
+export async function fetchBeatLeaderScore(
+  playerId: string,
+  mapHash: string,
+  difficulty: string,
+  characteristic = 'Standard'
+): Promise<PlayerScore | null> {
+  if (!playerId || !mapHash) return null
+  const url = `https://api.beatleader.xyz/score/${encodeURIComponent(playerId)}/${encodeURIComponent(mapHash)}/${encodeURIComponent(difficultyToBeatLeader(difficulty))}/${encodeURIComponent(characteristic)}`
+  try {
+    const score = await fetchJson<BeatLeaderScore>(url, { retries: 0, timeoutMs: 10_000 })
+    if (typeof score.accuracy !== 'number' || score.accuracy <= 0) return null
+    return { accuracy: score.accuracy, rank: score.rank ?? 0 }
+  } catch (err) {
+    if (!(err instanceof HttpError && err.status === 404)) {
+      log.warn('score lookup failed', err instanceof Error ? err.message : err)
+    }
+    return null
+  }
+}
+
+/** Format a 0..1 accuracy as a display label, e.g. 0.97423 -> "97.42%". */
+export function formatAccuracy(accuracy: number): string {
+  return `${(accuracy * 100).toFixed(2)}%`
 }

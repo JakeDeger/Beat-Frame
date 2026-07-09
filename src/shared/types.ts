@@ -78,6 +78,8 @@ export interface ShortOptions {
   durationSec: number
   /** Horizontal crop bias: -1 = far left, 0 = center, 1 = far right */
   cropBias: number
+  /** Ignore startOffsetSec and start at the most intense (loudest) section */
+  autoHighlight: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +109,8 @@ export interface BeatSaverMap {
   coverUrl: string
   /** Local file path of the downloaded cover (filled in by the main process) */
   coverPath?: string
+  /** SHA1 of the current map version — used for score lookups */
+  hash: string
   difficulties: MapDifficulty[]
   uploadedAt?: string
 }
@@ -121,6 +125,14 @@ export interface PlayerProfile {
   country: string
   rank: number
   profileUrl: string
+}
+
+/** The player's own score on the rendered map (BeatLeader). */
+export interface PlayerScore {
+  /** 0..1, e.g. 0.9742 */
+  accuracy: number
+  /** Leaderboard rank for this score, 0 = unknown */
+  rank: number
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +181,8 @@ export interface RenderJob {
   thumbnailPath: string | null
   map: BeatSaverMap | null
   player: PlayerProfile | null
+  /** Player's score on this map, when found on BeatLeader */
+  score: PlayerScore | null
   error: string | null
   createdAt: number
   startedAt: number | null

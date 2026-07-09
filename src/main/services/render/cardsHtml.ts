@@ -22,6 +22,8 @@ export interface CardData {
   avatarDataUri: string
   /** data: URI or empty */
   logoDataUri: string
+  /** Preformatted accuracy label like "97.42%", or null when unknown */
+  accuracy: string | null
   /** True when a blurred gameplay clip is composited behind this card, so
    *  scrims can be lighter / the end screen translucent. */
   hasVideoBackdrop: boolean
@@ -82,6 +84,7 @@ export function introCardHtml(d: CardData): string {
     ? `<img src="${d.coverDataUri}" alt="" style="width:100%;height:100%;object-fit:cover;">`
     : `<div style="width:100%;height:100%;background:linear-gradient(135deg,${t.accentColor},${t.accentColorB});"></div>`
   const difficulty = t.showDifficulty && d.difficulty ? chip(escapeHtml(d.difficulty)) : ''
+  const accuracy = d.accuracy ? chip(`🎯 ${escapeHtml(d.accuracy)}`) : ''
   const player = d.playerName
     ? chip(
         `${d.avatarDataUri ? `<img src="${d.avatarDataUri}" style="width:1.5em;height:1.5em;border-radius:50%;object-fit:cover;">` : ''}<span>${escapeHtml(d.playerName)}</span>`
@@ -105,7 +108,7 @@ export function introCardHtml(d: CardData): string {
         <div style="font-size:7vh;font-weight:800;line-height:1.08;margin-top:1.6vh;max-width:52vw;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(d.songTitle)}</div>
         <div style="font-size:3.4vh;font-weight:500;color:rgba(255,255,255,0.82);margin-top:1.4vh;">${escapeHtml(d.songArtist)}</div>
         <div style="font-size:2.4vh;color:rgba(255,255,255,0.6);margin-top:2.6vh;">Mapped by <b style="color:rgba(255,255,255,0.85);">${escapeHtml(d.mapper)}</b></div>
-        <div style="display:flex;gap:1.6vh;margin-top:3vh;font-size:2.5vh;font-weight:600;">${player}${difficulty}</div>
+        <div style="display:flex;gap:1.6vh;margin-top:3vh;font-size:2.5vh;font-weight:600;">${player}${difficulty}${accuracy}</div>
       </div>
     </div>
     <div style="position:absolute;left:0;right:0;top:0;height:0.8vh;background:linear-gradient(90deg,${t.accentColor},${t.accentColorB});"></div>
@@ -125,6 +128,7 @@ function splitIntroCardHtml(d: CardData): string {
     ? `<img src="${d.coverDataUri}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">`
     : `<div style="position:absolute;inset:0;background:linear-gradient(135deg,${t.accentColor},${t.accentColorB});"></div>`
   const difficulty = t.showDifficulty && d.difficulty ? chip(escapeHtml(d.difficulty)) : ''
+  const accuracy = d.accuracy ? chip(`🎯 ${escapeHtml(d.accuracy)}`) : ''
   const brand = t.channelName
     ? `<div style="position:absolute;bottom:3.6vh;left:0;right:0;text-align:center;font-size:1.9vh;letter-spacing:0.35em;text-transform:uppercase;color:rgba(255,255,255,0.6);text-shadow:0 0.3vh 1.5vh rgba(0,0,0,0.8);">${escapeHtml(t.channelName)}</div>`
     : ''
@@ -149,7 +153,7 @@ function splitIntroCardHtml(d: CardData): string {
                 background:linear-gradient(180deg, rgba(5,7,12,${scrim}) 0%, rgba(5,7,12,${scrim + 0.15}) 100%);">
       ${avatarCircle(d, 30)}
       ${d.playerName ? `<div style="font-size:4.2vh;font-weight:800;text-shadow:0 0.5vh 2.5vh rgba(0,0,0,0.7);max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(d.playerName)}</div>` : ''}
-      <div style="display:flex;gap:1.6vh;font-size:2.4vh;font-weight:600;">${difficulty}</div>
+      <div style="display:flex;gap:1.6vh;font-size:2.4vh;font-weight:600;">${difficulty}${accuracy}</div>
     </div>
     <div style="position:absolute;left:0;right:0;top:0;height:0.8vh;background:linear-gradient(90deg,${t.accentColor},${t.accentColorB});z-index:3;"></div>
     ${brand}
@@ -178,7 +182,7 @@ export function shortIntroCardHtml(d: CardData): string {
     : `<div style="width:11vh;height:11vh;margin:0 auto;border-radius:2vh;overflow:hidden;border:0.18vh solid rgba(255,255,255,0.15);box-shadow:0 1.4vh 4vh rgba(0,0,0,0.5);">${cover}</div>`
   const player = d.playerName
     ? `<div style="display:flex;align-items:center;justify-content:center;gap:0.6em;font-size:2vh;font-weight:600;margin-top:1.4vh;color:rgba(255,255,255,0.85);">
-         ${!split && d.avatarDataUri ? `<img src="${d.avatarDataUri}" style="width:1.6em;height:1.6em;border-radius:50%;object-fit:cover;">` : ''}${escapeHtml(d.playerName)}</div>`
+         ${!split && d.avatarDataUri ? `<img src="${d.avatarDataUri}" style="width:1.6em;height:1.6em;border-radius:50%;object-fit:cover;">` : ''}${escapeHtml(d.playerName)}${d.accuracy ? `<span style="color:rgba(255,255,255,0.65);">· ${escapeHtml(d.accuracy)}</span>` : ''}</div>`
     : ''
   return `<!doctype html><html><head><meta charset="utf-8"><style>${baseCss(t, true)}</style></head>
 <body>

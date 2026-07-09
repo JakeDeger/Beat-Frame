@@ -71,6 +71,15 @@ describe('generateMetadata / description', () => {
     expect(generateMetadata(input()).description).toContain('MyChannel')
     expect(generateMetadata(input({ channelName: '' })).description).not.toContain('Subscribe to')
   })
+
+  it('includes the accuracy line only when a score exists', () => {
+    const withScore = generateMetadata(input({ score: { accuracy: 0.97423, rank: 12 } }))
+    expect(withScore.description).toContain('🎯 Accuracy: 97.42% (#12 on BeatLeader)')
+    const noRank = generateMetadata(input({ score: { accuracy: 0.5, rank: 0 } }))
+    expect(noRank.description).toContain('🎯 Accuracy: 50.00%')
+    expect(noRank.description).not.toContain('(#')
+    expect(generateMetadata(input()).description).not.toContain('🎯')
+  })
 })
 
 describe('generateTags', () => {

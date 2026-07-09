@@ -26,6 +26,7 @@ export function makeMap(overrides: Partial<BeatSaverMap> = {}): BeatSaverMap {
     bpm: 139,
     durationSec: 258,
     coverUrl: 'https://cdn.beatsaver.com/cover.jpg',
+    hash: 'abc123def456',
     difficulties: [
       { characteristic: 'Standard', difficulty: 'Expert', njs: 12, nps: 4.2 },
       { characteristic: 'Standard', difficulty: 'Hard', njs: 10, nps: 3.1 }

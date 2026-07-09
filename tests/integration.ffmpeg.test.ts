@@ -4,6 +4,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { buildRenderPlan } from '../src/main/services/render/plan'
+import { findLoudestOffset } from '../src/main/services/ffmpeg/loudness'
 import { makeRender, makeShort, makeTemplate, makeTrim } from './helpers'
 import type { VideoFileInfo } from '../src/shared/types'
 
@@ -127,6 +128,25 @@ d('long-form render plan executes on real ffmpeg', () => {
       expect(res.status, `${introStyle}: ${res.stderr?.toString().slice(-2000)}`).toBe(0)
     }
   }, 600_000)
+})
+
+d('loudness analysis on real ffmpeg', () => {
+  it('finds the loud section of a clip', async () => {
+    // 40 s of near-silence with a loud burst from 20-30 s.
+    const clip = path.join(dir, 'levels.mp4')
+    execFileSync('ffmpeg', [
+      '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=10',
+      '-f', 'lavfi', '-i', "sine=frequency=440:sample_rate=44100",
+      '-af', "volume='if(between(t,20,30),1,0.02)':eval=frame",
+      '-t', '40', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-shortest', clip
+    ], { timeout: 120_000 })
+
+    const best = await findLoudestOffset(clip, { rangeStartSec: 0, rangeEndSec: 40, windowSec: 8, candidates: 6 })
+    expect(best).not.toBeNull()
+    // The loudest 8 s window must start inside (or overlap) the 20-30 s burst.
+    expect(best!).toBeGreaterThanOrEqual(14)
+    expect(best!).toBeLessThanOrEqual(30)
+  }, 120_000)
 })
 
 d('shorts render plan executes on real ffmpeg', () => {

@@ -10,6 +10,7 @@ import { lookupMap } from './services/beatsaver'
 import { lookupPlayer } from './services/players'
 import { generateMetadata, type MetadataInput } from './services/metadata'
 import { renderQueue } from './services/render/renderQueue'
+import { renderCardPreview, type PreviewKind } from './services/render/preview'
 import { uploadQueue } from './services/youtube/uploadQueue'
 import { startSignIn, signOut, isSignedIn } from './services/youtube/auth'
 import { getMyChannel, listMyPlaylists } from './services/youtube/api'
@@ -91,6 +92,7 @@ export function registerIpcHandlers(): void {
   handle(IPC.BEATSAVER_LOOKUP, (mapId: string) => lookupMap(mapId))
   handle(IPC.PLAYER_LOOKUP, (profileUrl: string) => lookupPlayer(profileUrl))
   handle(IPC.METADATA_GENERATE, (input: MetadataInput) => generateMetadata(input))
+  handle(IPC.CARD_PREVIEW, (kind: PreviewKind, mapId: string) => renderCardPreview(kind, mapId))
 
   // --- render queue ---
   handle(IPC.RENDER_ENQUEUE, (request: RenderRequest) => renderQueue.enqueue(request))

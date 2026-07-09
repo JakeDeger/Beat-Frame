@@ -1,4 +1,4 @@
-import type { BeatSaverMap, PlayerProfile, VideoMetadata, VideoMode } from '@shared/types'
+import type { BeatSaverMap, PlayerProfile, PlayerScore, VideoMetadata, VideoMode } from '@shared/types'
 
 /**
  * SEO-aware YouTube metadata generation from BeatSaver + player data.
@@ -19,6 +19,8 @@ export interface MetadataInput {
   mode: VideoMode
   extraKeywords: string[]
   channelName: string
+  /** Player's own score on the map (optional; adds an accuracy line) */
+  score?: PlayerScore | null
 }
 
 const TITLE_MAX = 100
@@ -82,6 +84,10 @@ export function generateDescription(input: MetadataInput): string {
   lines.push(`🗺️ Map by: ${cleanupWhitespace(map.levelAuthorName)}`)
   lines.push(`📥 Map: https://beatsaver.com/maps/${map.id}`)
   if (map.bpm > 0) lines.push(`⚡ BPM: ${Math.round(map.bpm)}`)
+  if (input.score && input.score.accuracy > 0) {
+    const rank = input.score.rank > 0 ? ` (#${input.score.rank} on BeatLeader)` : ''
+    lines.push(`🎯 Accuracy: ${(input.score.accuracy * 100).toFixed(2)}%${rank}`)
+  }
   if (input.player) {
     const platform = input.player.platform === 'beatleader' ? 'BeatLeader' : 'ScoreSaber'
     lines.push(`👤 ${platform} profile: ${input.player.profileUrl}`)

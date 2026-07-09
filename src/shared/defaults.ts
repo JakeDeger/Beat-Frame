@@ -52,7 +52,7 @@ export const DEFAULT_SCHEDULE: ScheduleSettings = {
 
 export const DEFAULT_TRIM: TrimOptions = { trimStartSec: 0, trimEndSec: 0 }
 
-export const DEFAULT_SHORT: ShortOptions = { startOffsetSec: 0, durationSec: 60, cropBias: 0 }
+export const DEFAULT_SHORT: ShortOptions = { startOffsetSec: 0, durationSec: 60, cropBias: 0, autoHighlight: true }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   outputFolder: '',

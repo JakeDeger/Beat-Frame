@@ -10,8 +10,11 @@ Import a recording, enter the BeatSaver map ID (usually auto-detected), pick *Lo
 
 ### Editing
 - **Long-form videos** — fade in from black, animated title card (song / artist / mapper / cover art / player / difficulty), gameplay kept *exactly* as recorded (no cuts, zooms or effects), then a clean end screen with subscribe & recommended-video placeholders and a fade out.
-- **Blurred gameplay backdrops** *(v1.1)* — the intro and end screen play a softly blurred clip from a random moment of your own gameplay behind the cards, so every video opens with motion instead of a flat background. Toggle in Templates.
+- **Blurred gameplay backdrops** *(v1.1)* — the intro and end screen play a softly blurred clip of your own gameplay behind the cards, so every video opens with motion instead of a flat background. Toggle in Templates.
 - **Split-screen intro** *(v1.1)* — cover art fills one half, the player's avatar and name the other, divided by an accent line. The classic centered panel remains available.
+- **Smart highlight detection** *(v1.2)* — Shorts can start at the most intense section automatically, and backdrop clips prefer energetic moments: BeatFrame samples the audio energy across the recording (adds under a second of prep).
+- **Your score on the intro card** *(v1.2)* — with a BeatLeader profile connected, your accuracy (and rank) for the map appears on the title card and in the description.
+- **Card previews** *(v1.2)* — Templates → "Preview with real data" renders the exact intro/end screen/thumbnail for any map ID without running a full encode.
 - **YouTube Shorts** — vertical 9:16 smart crop with adjustable framing, compact animated intro, up to 3 minutes, smooth ending.
 - **Single-pass rendering** — intro, outro, fades, scaling and audio conditioning are composited in one FFmpeg filtergraph. The gameplay is encoded exactly once; no intermediate files.
 - **Audio** — optional loudness normalization to −14 LUFS (YouTube's playback level) and volume adjustment.
@@ -26,6 +29,7 @@ Import a recording, enter the BeatSaver map ID (usually auto-detected), pick *Lo
 - Secure Google sign-in (OAuth 2.0 + PKCE, loopback redirect). Tokens are encrypted with the OS keychain (`safeStorage`).
 - Resumable, chunked uploads with automatic retry and progress.
 - Visibility control (private/unlisted/public), playlists, scheduled publishing, custom thumbnails, upload history.
+- **Upload review dialog** *(v1.2)* — edit the generated title/description/tags, pick visibility and playlist, and optionally schedule the publish time right from the render queue.
 
 ### Full automation
 - Watch an input folder — new recordings are detected (even ones dropped while the app was closed), rendered with your template, metadata-generated, uploaded, and the originals archived.

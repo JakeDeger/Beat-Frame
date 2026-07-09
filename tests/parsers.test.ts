@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { extractMapId, isValidMapId, normalizeDifficulty } from '../src/main/services/beatsaver'
-import { parseProfileUrl } from '../src/main/services/players'
+import { extractMapId, isValidMapId, normalizeDifficulty, mapFromApi } from '../src/main/services/beatsaver'
+import { parseProfileUrl, difficultyToBeatLeader, formatAccuracy } from '../src/main/services/players'
 import { isTimeReached } from '../src/main/services/automation'
 import { mergeSettings, DEFAULT_SETTINGS } from '../src/shared/defaults'
 import { escapeHtml, hexWithAlpha } from '../src/main/services/render/cardsHtml'
@@ -102,6 +102,52 @@ describe('hexWithAlpha', () => {
   })
   it('falls back on invalid input', () => {
     expect(hexWithAlpha('red', 0.2)).toContain('rgba(')
+  })
+})
+
+describe('mapFromApi', () => {
+  it('extracts hash, metadata and normalized difficulties', () => {
+    const map = mapFromApi(
+      {
+        id: '25f',
+        name: 'Beat It',
+        metadata: { songName: 'Beat It', songAuthorName: 'MJ', levelAuthorName: 'Yazer', bpm: 139, duration: 258 },
+        versions: [
+          {
+            hash: 'ABC123DEF456',
+            coverURL: 'https://cdn.beatsaver.com/x.jpg',
+            diffs: [{ characteristic: 'Standard', difficulty: 'expertPlus', njs: 16, nps: 5.678 }]
+          }
+        ]
+      },
+      '25f'
+    )
+    expect(map.hash).toBe('abc123def456')
+    expect(map.difficulties[0].difficulty).toBe('Expert+')
+    expect(map.difficulties[0].nps).toBe(5.68)
+    expect(map.songAuthorName).toBe('MJ')
+  })
+
+  it('fills safe defaults for sparse responses', () => {
+    const map = mapFromApi({ id: 'ff' }, 'ff')
+    expect(map.songName).toBe('Unknown Song')
+    expect(map.hash).toBe('')
+    expect(map.difficulties).toEqual([])
+  })
+})
+
+describe('difficultyToBeatLeader', () => {
+  it('maps display names to API identifiers', () => {
+    expect(difficultyToBeatLeader('Expert+')).toBe('ExpertPlus')
+    expect(difficultyToBeatLeader('Expert')).toBe('Expert')
+    expect(difficultyToBeatLeader('Easy')).toBe('Easy')
+  })
+})
+
+describe('formatAccuracy', () => {
+  it('formats 0..1 fractions as percentages', () => {
+    expect(formatAccuracy(0.97423)).toBe('97.42%')
+    expect(formatAccuracy(1)).toBe('100.00%')
   })
 })
 

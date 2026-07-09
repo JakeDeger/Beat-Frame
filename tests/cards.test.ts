@@ -20,6 +20,7 @@ function data(overrides: Partial<CardData> = {}): CardData {
     coverDataUri: COVER,
     avatarDataUri: AVATAR,
     logoDataUri: '',
+    accuracy: null,
     hasVideoBackdrop: true,
     template: makeTemplate({ channelName: 'MyChannel', introLayout: 'split' }),
     ...overrides
@@ -54,6 +55,12 @@ describe('split-screen intro card', () => {
     const html = introCardHtml(data({ template: makeTemplate({ introLayout: 'panel' }) }))
     expect(html).not.toContain('width:50vw')
     expect(html).toContain('Now Playing')
+  })
+
+  it('shows the accuracy chip in both layouts when a score exists', () => {
+    expect(introCardHtml(data({ accuracy: '97.42%' }))).toContain('97.42%')
+    expect(introCardHtml(data({ accuracy: '97.42%', template: makeTemplate({ introLayout: 'panel' }) }))).toContain('97.42%')
+    expect(introCardHtml(data({ accuracy: null }))).not.toContain('🎯')
   })
 })
 
