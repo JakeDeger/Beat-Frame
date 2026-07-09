@@ -206,6 +206,15 @@ export default function SettingsPage(): React.JSX.Element {
             placeholder="beat saber montage, rhythm gaming"
           />
         </Field>
+        <Field label="Description footer" hint="Appended to every generated description — channel links, socials, credits.">
+          <textarea
+            className="input"
+            rows={3}
+            value={settings.descriptionFooter}
+            onChange={(e) => void saveSettings((d) => void (d.descriptionFooter = e.target.value))}
+            placeholder={'Discord: discord.gg/…\nTwitch: twitch.tv/…'}
+          />
+        </Field>
       </div>
 
       <div className="card">

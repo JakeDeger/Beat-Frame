@@ -328,6 +328,8 @@ export interface AppSettings {
   uploadPresets: UploadPreset[]
   /** Custom keywords merged into generated tags */
   extraKeywords: string[]
+  /** Free text appended to every generated description (links, socials, credits) */
+  descriptionFooter: string
   /** OAuth client credentials for the YouTube Data API */
   youtubeClientId: string
   youtubeClientSecret: string

@@ -64,6 +64,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   schedule: DEFAULT_SCHEDULE,
   uploadPresets: [],
   extraKeywords: [],
+  descriptionFooter: '',
   youtubeClientId: '',
   youtubeClientSecret: '',
   checkForUpdates: true

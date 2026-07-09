@@ -28,7 +28,8 @@ export function UploadDialog({ job, onClose }: { job: RenderJob; onClose: () => 
         mode: job.request.mode,
         extraKeywords: settings.extraKeywords,
         channelName: settings.template.channelName,
-        score: job.score ?? null
+        score: job.score ?? null,
+        descriptionFooter: settings.descriptionFooter
       })
       .then(setMeta)
       .catch((err) => pushToast(toast('error', 'Could not generate metadata', message(err))))

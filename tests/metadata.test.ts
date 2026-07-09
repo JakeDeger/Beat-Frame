@@ -72,6 +72,14 @@ describe('generateMetadata / description', () => {
     expect(generateMetadata(input({ channelName: '' })).description).not.toContain('Subscribe to')
   })
 
+  it('appends the description footer before the hashtags', () => {
+    const meta = generateMetadata(input({ descriptionFooter: 'Discord: discord.gg/x\nTwitch: twitch.tv/y' }))
+    expect(meta.description).toContain('Discord: discord.gg/x\nTwitch: twitch.tv/y')
+    const lines = meta.description.split('\n')
+    expect(lines[lines.length - 1]).toMatch(/^#/) // hashtags stay last
+    expect(generateMetadata(input({ descriptionFooter: '  ' })).description).not.toContain('Discord')
+  })
+
   it('includes the accuracy line only when a score exists', () => {
     const withScore = generateMetadata(input({ score: { accuracy: 0.97423, rank: 12 } }))
     expect(withScore.description).toContain('🎯 Accuracy: 97.42% (#12 on BeatLeader)')

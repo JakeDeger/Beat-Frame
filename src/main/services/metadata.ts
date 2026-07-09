@@ -21,6 +21,8 @@ export interface MetadataInput {
   channelName: string
   /** Player's own score on the map (optional; adds an accuracy line) */
   score?: PlayerScore | null
+  /** Appended verbatim before the hashtags (links, socials, credits) */
+  descriptionFooter?: string
 }
 
 const TITLE_MAX = 100
@@ -97,6 +99,11 @@ export function generateDescription(input: MetadataInput): string {
   if (input.channelName) {
     lines.push('')
     lines.push(`Subscribe to ${cleanupWhitespace(input.channelName)} for more Beat Saber gameplay!`)
+  }
+  const footer = (input.descriptionFooter ?? '').trim()
+  if (footer) {
+    lines.push('')
+    lines.push(footer)
   }
   lines.push('')
   lines.push(hashtagsLine(mode))

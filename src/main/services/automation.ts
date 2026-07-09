@@ -257,7 +257,8 @@ class AutomationService {
         mode: item.mode,
         extraKeywords: settings.extraKeywords,
         channelName: settings.template.channelName,
-        score: job.score ?? null
+        score: job.score ?? null,
+        descriptionFooter: settings.descriptionFooter
       })
     }
 

@@ -42,6 +42,7 @@ export interface Api {
     extraKeywords: string[]
     channelName: string
     score?: PlayerScore | null
+    descriptionFooter?: string
   }): Promise<VideoMetadata>
   cardPreview(kind: 'intro' | 'intro-short' | 'outro' | 'thumbnail', mapId: string): Promise<string>
   pathForFile(file: File): string
