@@ -107,15 +107,26 @@ export function runFfmpeg(options: RunFfmpegOptions): FfmpegHandle {
   }
 }
 
-/** True when the error indicates the selected hardware encoder cannot run on this machine. */
+/**
+ * True when the error indicates the selected hardware encoder cannot run on
+ * this machine. Callers only consult this when a hardware encoder was in use,
+ * so the generic "error while opening encoder" pattern is safe to match.
+ * (Verified against a real no-GPU machine: Linux reports
+ * "Cannot load libcuda.so.1" + "Error while opening encoder".)
+ */
 export function isHardwareEncoderFailure(err: unknown): boolean {
   if (!(err instanceof FfmpegError)) return false
   const text = err.logTail.join('\n').toLowerCase()
   return (
     text.includes('cannot load nvcuda') ||
+    text.includes('cannot load libcuda') ||
+    text.includes('libcuda.so') ||
     text.includes('no nvenc capable devices') ||
+    text.includes('openencodesessionex failed') ||
     text.includes('failed to initialise vaapi') ||
-    text.includes('error initializing output stream') && (text.includes('nvenc') || text.includes('amf') || text.includes('qsv')) ||
+    text.includes('error while opening encoder') ||
+    (text.includes('error initializing output stream') &&
+      (text.includes('nvenc') || text.includes('amf') || text.includes('qsv'))) ||
     text.includes('no capable devices found') ||
     text.includes('failed loading amdvlk') ||
     text.includes('mfx session') ||

@@ -60,6 +60,50 @@ export interface ApiMap {
   }>
 }
 
+/**
+ * Clean up artist/mapper credits. Old community maps frequently ship dirty
+ * metadata — "Mapped by X" stuffed into the artist field, or artist and
+ * mapper swapped — so we repair the obvious cases using the map's
+ * conventional "Artist - Song" display name as a cross-check.
+ */
+export function cleanMapCredits(input: {
+  name: string
+  songName: string
+  songAuthorName: string
+  levelAuthorName: string
+}): { artist: string; mapper: string } {
+  const name = input.name.trim()
+  let artist = input.songAuthorName.trim()
+  let mapper = input.levelAuthorName.trim()
+
+  const mappedBy = /^mapped\s+by\s+(.+)$/i
+  const artistIsMapperCredit = mappedBy.exec(artist)
+  if (artistIsMapperCredit) {
+    // "Mapped by X" in the artist field: X is the real mapper. If the display
+    // name starts with the levelAuthor value, that value is the real artist.
+    const realMapper = artistIsMapperCredit[1].trim()
+    if (mapper && name.toLowerCase().startsWith(`${mapper.toLowerCase()} - `)) {
+      artist = mapper
+    } else {
+      artist = ''
+    }
+    mapper = realMapper
+  }
+  const mapperCredit = mappedBy.exec(mapper)
+  if (mapperCredit) mapper = mapperCredit[1].trim()
+
+  // Recover a missing artist from a "Artist - Song" style display name.
+  if (!artist || artist === 'Unknown Artist') {
+    const song = input.songName.trim()
+    if (song && name.toLowerCase().endsWith(song.toLowerCase()) && name.length > song.length) {
+      const prefix = name.slice(0, name.length - song.length).replace(/\s*[-–—]\s*$/, '').trim()
+      if (prefix && prefix.toLowerCase() !== mapper.toLowerCase()) artist = prefix
+    }
+  }
+
+  return { artist: artist || 'Unknown Artist', mapper: mapper || 'Unknown Mapper' }
+}
+
 /** Pure conversion from the BeatSaver API shape to our domain model. */
 export function mapFromApi(raw: ApiMap, fallbackId: string): BeatSaverMap {
   const meta = raw.metadata ?? {}
@@ -71,13 +115,19 @@ export function mapFromApi(raw: ApiMap, fallbackId: string): BeatSaverMap {
     nps: Math.round((d.nps ?? 0) * 100) / 100,
     stars: d.stars
   }))
+  const credits = cleanMapCredits({
+    name: raw.name ?? meta.songName ?? '',
+    songName: meta.songName ?? '',
+    songAuthorName: meta.songAuthorName ?? '',
+    levelAuthorName: meta.levelAuthorName ?? ''
+  })
   return {
     id: raw.id ?? fallbackId,
     name: raw.name ?? meta.songName ?? fallbackId,
     songName: meta.songName ?? raw.name ?? 'Unknown Song',
     songSubName: meta.songSubName ?? '',
-    songAuthorName: meta.songAuthorName ?? 'Unknown Artist',
-    levelAuthorName: meta.levelAuthorName ?? 'Unknown Mapper',
+    songAuthorName: credits.artist,
+    levelAuthorName: credits.mapper,
     bpm: meta.bpm ?? 0,
     durationSec: meta.duration ?? 0,
     coverUrl: version?.coverURL ?? '',

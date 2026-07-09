@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractMapId, isValidMapId, normalizeDifficulty, mapFromApi } from '../src/main/services/beatsaver'
+import { cleanMapCredits, extractMapId, isValidMapId, normalizeDifficulty, mapFromApi } from '../src/main/services/beatsaver'
 import { parseProfileUrl, difficultyToBeatLeader, formatAccuracy } from '../src/main/services/players'
 import { isTimeReached } from '../src/main/services/automation'
 import { mergeSettings, DEFAULT_SETTINGS } from '../src/shared/defaults'
@@ -133,6 +133,43 @@ describe('mapFromApi', () => {
     expect(map.songName).toBe('Unknown Song')
     expect(map.hash).toBe('')
     expect(map.difficulties).toEqual([])
+  })
+})
+
+describe('cleanMapCredits', () => {
+  it('passes clean credits through untouched', () => {
+    expect(
+      cleanMapCredits({ name: 'MJ - Beat It', songName: 'Beat It', songAuthorName: 'MJ', levelAuthorName: 'Yazer' })
+    ).toEqual({ artist: 'MJ', mapper: 'Yazer' })
+  })
+
+  it('repairs the classic "Mapped by X" swap (real map 25f)', () => {
+    expect(
+      cleanMapCredits({
+        name: 'DM DOKURO - Reality Check Through The Skull',
+        songName: 'Reality Check Through The Skull',
+        songAuthorName: 'Mapped by Rickput',
+        levelAuthorName: 'DM DOKURO'
+      })
+    ).toEqual({ artist: 'DM DOKURO', mapper: 'Rickput' })
+  })
+
+  it('strips a "Mapped by" prefix from the mapper field', () => {
+    expect(
+      cleanMapCredits({ name: 'A - B', songName: 'B', songAuthorName: 'A', levelAuthorName: 'Mapped by Zed' })
+    ).toEqual({ artist: 'A', mapper: 'Zed' })
+  })
+
+  it('recovers a missing artist from an "Artist - Song" display name', () => {
+    expect(
+      cleanMapCredits({ name: 'Camellia - Ghost', songName: 'Ghost', songAuthorName: '', levelAuthorName: 'Mapper1' })
+    ).toEqual({ artist: 'Camellia', mapper: 'Mapper1' })
+  })
+
+  it('falls back to Unknown Artist when nothing can be recovered', () => {
+    expect(
+      cleanMapCredits({ name: 'Ghost', songName: 'Ghost', songAuthorName: 'Mapped by Q', levelAuthorName: '' })
+    ).toEqual({ artist: 'Unknown Artist', mapper: 'Q' })
   })
 })
 

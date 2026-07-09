@@ -26,6 +26,32 @@ const ENCODER_CANDIDATES = [
 
 let cache: EncoderSupport | null = null
 
+const HW_ENCODER_SUFFIXES = ['_nvenc', '_amf', '_qsv']
+
+/**
+ * ffmpeg's -encoders list only proves the BUILD supports an encoder, not that
+ * the machine can run it (no GPU / missing driver still lists nvenc). So each
+ * listed hardware encoder is verified with a 3-frame test encode; failures
+ * are marked unavailable, which keeps first renders from ever hitting a
+ * doomed GPU path.
+ */
+async function verifyEncoderWorks(ffmpeg: string, encoder: string): Promise<boolean> {
+  try {
+    await execFileAsync(
+      ffmpeg,
+      [
+        '-hide_banner', '-v', 'error',
+        '-f', 'lavfi', '-i', 'color=c=black:size=256x144:rate=30',
+        '-frames:v', '3', '-c:v', encoder, '-f', 'null', '-'
+      ],
+      { timeout: 20_000 }
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function detectEncoders(force = false): Promise<EncoderSupport> {
   if (cache && !force) return cache
   const ffmpeg = resolveFfmpegPath()
@@ -48,6 +74,15 @@ export async function detectEncoders(force = false): Promise<EncoderSupport> {
     for (const enc of ENCODER_CANDIDATES) {
       result.encoders[enc] = new RegExp(`\\s${escapeRegExp(enc)}\\s`).test(encodersOut.stdout)
     }
+    // Verify hardware encoders actually run on this machine (in parallel).
+    const hwListed = ENCODER_CANDIDATES.filter(
+      (enc) => result.encoders[enc] && HW_ENCODER_SUFFIXES.some((s) => enc.endsWith(s))
+    )
+    const verified = await Promise.all(hwListed.map((enc) => verifyEncoderWorks(ffmpeg, enc)))
+    hwListed.forEach((enc, i) => {
+      result.encoders[enc] = verified[i]
+      if (!verified[i]) log.info(`${enc} listed but not usable on this machine`)
+    })
   } catch (err) {
     log.error('encoder detection failed', err)
   }
