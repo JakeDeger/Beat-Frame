@@ -93,6 +93,8 @@ d('long-form render plan executes on real ffmpeg', () => {
       encoderName: 'libx264',
       introCardPath: introPath,
       outroCardPath: outroPath,
+      // Exercise the blurred-gameplay backdrop path on real ffmpeg.
+      backdrop: { introOffsetSec: 12, outroOffsetSec: 28 },
       outputPath
     })
     const res = spawnSync('ffmpeg', ['-hide_banner', '-y', ...plan.args], { timeout: 300_000 })
@@ -118,6 +120,7 @@ d('long-form render plan executes on real ffmpeg', () => {
         encoderName: 'libx264',
         introCardPath: introPath,
         outroCardPath: outroPath,
+        backdrop: null,
         outputPath
       })
       const res = spawnSync('ffmpeg', ['-hide_banner', '-y', ...plan.args], { timeout: 300_000 })
@@ -139,6 +142,7 @@ d('shorts render plan executes on real ffmpeg', () => {
       encoderName: 'libx264',
       introCardPath: introPath, // wrong aspect is fine for smoke purposes
       outroCardPath: null,
+      backdrop: { introOffsetSec: 30, outroOffsetSec: 0 },
       outputPath
     })
     // Shorts intro card is generated at 9:16 in production; regenerate one here.

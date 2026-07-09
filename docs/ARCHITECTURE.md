@@ -49,7 +49,8 @@ src/
 1. **Probe** the source with ffprobe (duration, geometry, fps, audio).
 2. **Fetch** BeatSaver map metadata + cover, and optionally the player profile.
 3. **Compose title cards**: the intro/outro/thumbnail are HTML/CSS documents rendered in an offscreen `BrowserWindow` at the exact output resolution and captured as PNGs (with alpha). This gives designer-grade typography/gradients/blur without a compositing engine.
-4. **Build the plan** (`render/plan.ts`, pure): one FFmpeg invocation whose filtergraph does trim → scale → intro overlay (alpha fade + slide/zoom) → outro overlay (PTS-shifted to the tail) → fade to black, plus loudness normalization and audio fades. The gameplay stream is never cut, retimed or effected — by design and by unit test.
+4. **Build the plan** (`render/plan.ts`, pure): one FFmpeg invocation whose filtergraph does trim → scale → blurred backdrop overlays → intro overlay (alpha fade + slide/zoom) → outro overlay (PTS-shifted to the tail) → fade to black, plus loudness normalization and audio fades. The gameplay stream is never cut, retimed or effected — by design and by unit test.
+   - *Blurred backdrops*: two extra seeked reads of the same source file (random offsets picked once per job by `pickBackdropOffsets`) are downscaled to quarter resolution, gaussian-blurred and upscaled — a cheap full-frame blur — then composited under the cards: the intro backdrop fades out as the real gameplay is revealed, the outro backdrop fades in under the end screen (which turns translucent when a backdrop is present).
 5. **Encode** via the selected encoder (`h264_nvenc` / `hevc_amf` / `av1_qsv` / `libx264` …). If a hardware encoder fails at runtime (missing driver, no GPU), the queue detects it from the log tail and transparently re-runs the plan with the software equivalent.
 6. **Thumbnail** (long-form): 1280×720 JPEG from the same card renderer.
 

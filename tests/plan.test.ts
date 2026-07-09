@@ -6,6 +6,7 @@ import {
   computeOutputDims,
   computeTimeline,
   encoderArgs,
+  pickBackdropOffsets,
   PlanError,
   softwareFallbackFor
 } from '../src/main/services/render/plan'
@@ -101,7 +102,8 @@ describe('buildFilterGraph', () => {
     normalizeAudio: true,
     volumeGainDb: 0,
     template: makeTemplate(),
-    hasOutroCard: true
+    hasOutroCard: true,
+    backdrop: null as import('../src/main/services/render/plan').BackdropIndices | null
   }
 
   it('produces a single-pass graph with intro, outro, fades and audio conditioning', () => {
@@ -160,6 +162,107 @@ describe('buildFilterGraph', () => {
   })
 })
 
+describe('blurred backdrop', () => {
+  const base = {
+    mode: 'longform' as const,
+    timeline: { seekSec: 0, durationSec: 100, introDurationSec: 6, outroStartSec: 92 },
+    outputWidth: 1920,
+    outputHeight: 1080,
+    sourceFps: 60,
+    frameRate: 'source' as const,
+    cropBias: 0,
+    hasAudio: true,
+    normalizeAudio: false,
+    volumeGainDb: 0,
+    template: makeTemplate(),
+    hasOutroCard: true
+  }
+
+  it('composites blurred intro and outro segments behind the cards', () => {
+    const { graph } = buildFilterGraph({ ...base, backdrop: { introIndex: 3, outroIndex: 4 } })
+    expect(graph).toContain('[3:v]')
+    expect(graph).toContain('[4:v]')
+    // quarter-res blur pipeline
+    expect(graph).toContain('scale=480:270:flags=bilinear,gblur=sigma=6,scale=1920:1080')
+    // intro backdrop fades out as gameplay is revealed; outro fades in at the end
+    expect(graph).toContain('[introbg]')
+    expect(graph).toContain('[outrobg]')
+    expect(graph).toContain('setpts=PTS+92/TB[outrobg]')
+    // layering: backdrop under the card
+    expect(graph.indexOf('[introbg]overlay')).toBeLessThan(graph.indexOf('[introcard]overlay'))
+    expect(graph.indexOf('[outrobg]overlay')).toBeLessThan(graph.indexOf('[outrocard]overlay'))
+  })
+
+  it('applies the same 9:16 crop to shorts backdrops as to gameplay', () => {
+    const { graph } = buildFilterGraph({
+      ...base,
+      mode: 'short',
+      outputWidth: 1080,
+      outputHeight: 1920,
+      hasOutroCard: false,
+      timeline: { seekSec: 0, durationSec: 60, introDurationSec: 3.5, outroStartSec: null },
+      backdrop: { introIndex: 2, outroIndex: null }
+    })
+    const bgChain = graph.split(';').find((p) => p.startsWith('[2:v]'))!
+    expect(bgChain).toContain("crop=w='min(iw,ih*9/16)'")
+    expect(bgChain).toContain('gblur')
+  })
+
+  it('is fully absent when disabled', () => {
+    const { graph } = buildFilterGraph({ ...base, backdrop: null })
+    expect(graph).not.toContain('gblur')
+    expect(graph).not.toContain('introbg')
+  })
+
+  it('adds the extra seeked inputs to the ffmpeg invocation', () => {
+    const plan = buildRenderPlan({
+      source: makeSource(),
+      mode: 'longform',
+      trim: makeTrim(),
+      short: makeShort(),
+      template: makeTemplate(),
+      render: makeRender(),
+      encoderName: 'libx264',
+      introCardPath: '/tmp/intro.png',
+      outroCardPath: '/tmp/outro.png',
+      backdrop: { introOffsetSec: 42.5, outroOffsetSec: 150 },
+      outputPath: '/out/final.mp4'
+    })
+    const cmd = plan.args.join(' ')
+    // main input + two backdrop reads of the same file
+    expect(cmd.split('/videos/gameplay.mp4').length - 1).toBe(3)
+    expect(cmd).toContain('-ss 42.5')
+    expect(cmd).toContain('-ss 150')
+  })
+})
+
+describe('pickBackdropOffsets', () => {
+  const timeline = { seekSec: 0, durationSec: 200, introDurationSec: 6, outroStartSec: 192 }
+
+  it('stays within the source and clear of the clip ends', () => {
+    for (const r of [0, 0.25, 0.5, 0.75, 0.9999]) {
+      const { introOffsetSec, outroOffsetSec } = pickBackdropOffsets(210, timeline, () => r)
+      expect(introOffsetSec).toBeGreaterThanOrEqual(0)
+      expect(introOffsetSec + timeline.introDurationSec).toBeLessThanOrEqual(210)
+      expect(outroOffsetSec).toBeGreaterThanOrEqual(0)
+      expect(outroOffsetSec + (timeline.durationSec - timeline.outroStartSec!)).toBeLessThanOrEqual(210)
+    }
+  })
+
+  it('draws intro from earlier footage than outro', () => {
+    const a = pickBackdropOffsets(210, timeline, () => 0)
+    expect(a.introOffsetSec).toBeLessThan(a.outroOffsetSec)
+  })
+
+  it('degrades safely for very short sources', () => {
+    const shortTimeline = { seekSec: 0, durationSec: 12, introDurationSec: 3, outroStartSec: 8 }
+    const { introOffsetSec, outroOffsetSec } = pickBackdropOffsets(12, shortTimeline, () => 0.99)
+    expect(introOffsetSec).toBeGreaterThanOrEqual(0)
+    expect(introOffsetSec).toBeLessThanOrEqual(12 - 3.5)
+    expect(outroOffsetSec).toBeGreaterThanOrEqual(0)
+  })
+})
+
 describe('encoderArgs', () => {
   it('uses CRF for libx264 when bitrate is auto', () => {
     const args = encoderArgs('libx264', 'balanced', 0, 1080).join(' ')
@@ -206,6 +309,7 @@ describe('buildRenderPlan', () => {
       encoderName: 'libx264',
       introCardPath: '/tmp/intro.png',
       outroCardPath: '/tmp/outro.png',
+      backdrop: null,
       outputPath: '/out/final.mp4'
     })
     const cmd = plan.args.join(' ')
@@ -234,6 +338,7 @@ describe('buildRenderPlan', () => {
       encoderName: 'h264_nvenc',
       introCardPath: '/tmp/intro.png',
       outroCardPath: null,
+      backdrop: null,
       outputPath: '/out/short.mp4'
     })
     expect(plan.args.join(' ')).not.toContain('outro')

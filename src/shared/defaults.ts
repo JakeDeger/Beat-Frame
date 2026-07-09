@@ -25,6 +25,8 @@ export const DEFAULT_TEMPLATE: TemplateConfig = {
   outroDurationSec: 8,
   showDifficulty: true,
   introStyle: 'slide-up',
+  introLayout: 'split',
+  blurredBackdrop: true,
   outroHeadline: 'Thanks for watching!',
   outroSubline: 'Subscribe for more Beat Saber gameplay'
 }

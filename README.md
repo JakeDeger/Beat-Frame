@@ -10,6 +10,8 @@ Import a recording, enter the BeatSaver map ID (usually auto-detected), pick *Lo
 
 ### Editing
 - **Long-form videos** — fade in from black, animated title card (song / artist / mapper / cover art / player / difficulty), gameplay kept *exactly* as recorded (no cuts, zooms or effects), then a clean end screen with subscribe & recommended-video placeholders and a fade out.
+- **Blurred gameplay backdrops** *(v1.1)* — the intro and end screen play a softly blurred clip from a random moment of your own gameplay behind the cards, so every video opens with motion instead of a flat background. Toggle in Templates.
+- **Split-screen intro** *(v1.1)* — cover art fills one half, the player's avatar and name the other, divided by an accent line. The classic centered panel remains available.
 - **YouTube Shorts** — vertical 9:16 smart crop with adjustable framing, compact animated intro, up to 3 minutes, smooth ending.
 - **Single-pass rendering** — intro, outro, fades, scaling and audio conditioning are composited in one FFmpeg filtergraph. The gameplay is encoded exactly once; no intermediate files.
 - **Audio** — optional loudness normalization to −14 LUFS (YouTube's playback level) and volume adjustment.

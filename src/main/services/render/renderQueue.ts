@@ -11,7 +11,14 @@ import { getSettings } from '../settings'
 import { probeVideo } from '../ffmpeg/probe'
 import { detectEncoders, pickEncoder } from '../ffmpeg/encoders'
 import { runFfmpeg, isHardwareEncoderFailure, type FfmpegHandle } from '../ffmpeg/run'
-import { buildRenderPlan, softwareFallbackFor, computeOutputDims } from './plan'
+import {
+  buildRenderPlan,
+  computeOutputDims,
+  computeTimeline,
+  pickBackdropOffsets,
+  softwareFallbackFor,
+  type BackdropOffsets
+} from './plan'
 import { lookupMap, bestDifficulty } from '../beatsaver'
 import { lookupPlayer, playerAvatarPath } from '../players'
 import { introCardHtml, outroCardHtml, shortIntroCardHtml, thumbnailHtml, type CardData } from './cardsHtml'
@@ -173,6 +180,24 @@ class RenderQueue {
       const outputPath = this.outputPathFor(req, map)
       fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
+      // Random blurred-gameplay backdrop positions, chosen once per job so a
+      // hardware-fallback retry renders the identical video.
+      let backdrop: BackdropOffsets | null = null
+      if (settings.template.blurredBackdrop) {
+        const timeline = computeTimeline({
+          sourceDurationSec: source.durationSec,
+          mode: req.mode,
+          trim: req.trim,
+          short: req.short,
+          template: settings.template
+        })
+        backdrop = pickBackdropOffsets(source.durationSec, timeline)
+        this.appendLog(
+          job,
+          `Backdrop clips: intro @ ${backdrop.introOffsetSec.toFixed(1)}s, outro @ ${backdrop.outroOffsetSec.toFixed(1)}s`
+        )
+      }
+
       const makePlan = (encoder: string) =>
         buildRenderPlan({
           source,
@@ -184,6 +209,7 @@ class RenderQueue {
           encoderName: encoder,
           introCardPath,
           outroCardPath,
+          backdrop,
           outputPath
         })
 
@@ -338,6 +364,7 @@ export function buildCardData(
     coverDataUri: fileToDataUri(map.coverPath),
     avatarDataUri: player ? fileToDataUri(playerAvatarPath(player)) : '',
     logoDataUri: fileToDataUri(template.logoPath || null),
+    hasVideoBackdrop: template.blurredBackdrop,
     template
   }
 }

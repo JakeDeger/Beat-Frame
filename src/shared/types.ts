@@ -54,6 +54,10 @@ export interface TemplateConfig {
   showDifficulty: boolean
   /** Intro animation style */
   introStyle: 'slide-up' | 'fade' | 'zoom'
+  /** Intro card layout: centered glass panel, or split-screen cover art + player avatar */
+  introLayout: 'panel' | 'split'
+  /** Show a blurred clip from a random part of the gameplay behind intro/outro cards */
+  blurredBackdrop: boolean
   /** Outro message headline */
   outroHeadline: string
   /** Outro sub-message */
