@@ -23,7 +23,7 @@ Import a recording, enter the BeatSaver map ID (usually auto-detected), pick *Lo
 ### Metadata & integrations
 - **BeatSaver** — song title, artist, mapper, BPM, duration, difficulties and cover art fetched from the map ID. IDs are auto-detected from filenames like `Song [25f].mp4`, `!bsr 25f`, or BeatSaver URLs.
 - **BeatLeader / ScoreSaber** — paste either profile link; the player's display name and avatar appear on the intro card and in metadata.
-- **Generated YouTube metadata** — natural, searchable titles (< 100 chars), well-formatted descriptions with map/mapper credits and profile links, deduplicated relevant tags under the 500-character limit, max 3 hashtags. No clickbait, no tag spam.
+- **Generated YouTube metadata** — natural, searchable titles (< 100 chars), well-formatted descriptions with map/mapper credits, profile links and your custom footer (links/socials), deduplicated relevant tags under the 500-character limit, max 3 hashtags. No clickbait, no tag spam.
 
 ### YouTube
 - Secure Google sign-in (OAuth 2.0 + PKCE, loopback redirect). Tokens are encrypted with the OS keychain (`safeStorage`).
