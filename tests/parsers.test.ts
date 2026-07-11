@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cleanMapCredits, extractMapId, isValidMapId, normalizeDifficulty, mapFromApi } from '../src/main/services/beatsaver'
 import { parseProfileUrl, difficultyToBeatLeader, formatAccuracy } from '../src/main/services/players'
-import { isTimeReached } from '../src/main/services/automation'
 import { mergeSettings, DEFAULT_SETTINGS } from '../src/shared/defaults'
 import { escapeHtml, hexWithAlpha } from '../src/main/services/render/cardsHtml'
 import { compareSemver } from '../src/main/services/updates'
@@ -57,19 +56,6 @@ describe('parseProfileUrl', () => {
   it('rejects unrelated URLs', () => {
     expect(parseProfileUrl('https://youtube.com/@someone')).toBeNull()
     expect(parseProfileUrl('')).toBeNull()
-  })
-})
-
-describe('isTimeReached', () => {
-  it('compares local HH:MM correctly', () => {
-    const at = (h: number, m: number): Date => new Date(2026, 5, 1, h, m)
-    expect(isTimeReached(at(18, 0), '18:00')).toBe(true)
-    expect(isTimeReached(at(17, 59), '18:00')).toBe(false)
-    expect(isTimeReached(at(23, 30), '18:00')).toBe(true)
-    expect(isTimeReached(at(9, 5), '9:05')).toBe(true)
-  })
-  it('rejects malformed times', () => {
-    expect(isTimeReached(new Date(), 'noon')).toBe(false)
   })
 })
 

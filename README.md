@@ -9,7 +9,7 @@ Import a recording, enter the BeatSaver map ID (usually auto-detected), pick *Lo
 ## Features
 
 ### Editing
-- **Long-form videos** — fade in from black, animated title card (song / artist / mapper / cover art / player / difficulty), gameplay kept *exactly* as recorded (no cuts, zooms or effects), then a clean end screen with subscribe & recommended-video placeholders and a fade out.
+- **Long-form videos** *(structure reworked in v1.4)* — a real intro section (animated title card over a blurred clip of your gameplay), a smooth crossfade into the *untouched* gameplay (no cuts, zooms or effects), then a crossfade into a dedicated end-screen section with subscribe & recommended-video placeholders and a fade out. The song audio starts with the gameplay; intro and outro are quiet.
 - **Blurred gameplay backdrops** *(v1.1)* — the intro and end screen play a softly blurred clip of your own gameplay behind the cards, so every video opens with motion instead of a flat background. Toggle in Templates.
 - **Split-screen intro** *(v1.1)* — cover art fills one half, the player's avatar and name the other, divided by an accent line. The classic centered panel remains available.
 - **Smart highlight detection** *(v1.2)* — Shorts can start at the most intense section automatically, and backdrop clips prefer energetic moments: BeatFrame samples the audio energy across the recording (adds under a second of prep).
@@ -17,7 +17,7 @@ Import a recording, enter the BeatSaver map ID (usually auto-detected), pick *Lo
 - **Card previews** *(v1.2)* — Templates → "Preview with real data" renders the exact intro/end screen/thumbnail for any map ID without running a full encode.
 - **YouTube Shorts** — vertical 9:16 smart crop with adjustable framing, compact animated intro, up to 3 minutes, smooth ending.
 - **Single-pass rendering** — intro, outro, fades, scaling and audio conditioning are composited in one FFmpeg filtergraph. The gameplay is encoded exactly once; no intermediate files.
-- **Audio** — optional loudness normalization to −14 LUFS (YouTube's playback level) and volume adjustment.
+- **Audio** — every audio track in the recording is mixed into the output *(v1.4 — OBS-style multi-track recordings used to play only the first, often-empty track)*, plus optional loudness normalization to −14 LUFS and volume adjustment. Silent recordings trigger a clear warning instead of a silently mute video.
 - Optional trim of dead space at the start/end. Nothing else touches your gameplay.
 
 ### Metadata & integrations
@@ -34,7 +34,8 @@ Import a recording, enter the BeatSaver map ID (usually auto-detected), pick *Lo
 ### Full automation
 - Watch an input folder — new recordings are detected (even ones dropped while the app was closed), rendered with your template, metadata-generated, uploaded, and the originals archived.
 - Optional **review gate**: each video pauses for you to approve/edit metadata before upload — or run fully hands-off.
-- **Daily schedule**: one long-form video and any number of Shorts at fixed times each day, with queue-empty notifications and restart-safe state.
+- **Daily schedule** *(reworked in v1.4)*: videos upload as soon as they're rendered and claim the next free daily slot via YouTube's own scheduled publishing — each goes live at its slot time **even if your PC is off**. Queue-empty warnings, restart-safe claims.
+- **Autopilot** *(v1.4)*: one switch on the Automation page enables the whole hands-off pipeline (watch folder → long-form + Short → upload → scheduled publish → archive), with a readiness checklist and an upcoming-publishes list.
 
 ### Rendering performance
 - Hardware encoding: **NVIDIA NVENC**, **AMD AMF**, **Intel QuickSync** with automatic detection and *automatic software fallback* if a GPU encoder fails mid-render.

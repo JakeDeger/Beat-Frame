@@ -10,6 +10,7 @@ export function makeSource(overrides: Partial<VideoFileInfo> = {}): VideoFileInf
     fps: 60,
     videoCodec: 'h264',
     audioCodec: 'aac',
+    audioStreamCount: 1,
     sizeBytes: 500_000_000,
     ...overrides
   }

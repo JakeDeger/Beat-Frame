@@ -356,6 +356,8 @@ export interface VideoFileInfo {
   fps: number
   videoCodec: string
   audioCodec: string | null
+  /** Number of audio streams — OBS-style recordings can have several */
+  audioStreamCount: number
   sizeBytes: number
 }
 

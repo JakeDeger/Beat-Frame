@@ -126,7 +126,9 @@ export function registerIpcHandlers(): void {
   // --- automation ---
   handle(IPC.AUTOMATION_ITEMS, () => automation.items())
   handle(IPC.AUTOMATION_STATUS, () => ({
-    watching: getSettings().automation.enabled && !!getSettings().automation.inputFolder
+    watching: getSettings().automation.enabled && !!getSettings().automation.inputFolder,
+    signedIn: isSignedIn(),
+    upcoming: automation.upcoming()
   }))
   handle(IPC.AUTOMATION_SET_MAP_ID, (itemId: string, mapId: string) => automation.setMapId(itemId, mapId))
   handle(IPC.AUTOMATION_APPROVE, (itemId: string, metadata: VideoMetadata | null) =>

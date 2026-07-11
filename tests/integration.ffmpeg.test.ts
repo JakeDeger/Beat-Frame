@@ -43,7 +43,7 @@ function probe(file: string): { durationSec: number; width: number; height: numb
   }
 }
 
-function sourceInfo(): VideoFileInfo {
+function sourceInfo(overrides: Partial<VideoFileInfo> = {}): VideoFileInfo {
   return {
     path: sourcePath,
     durationSec: 40,
@@ -52,7 +52,9 @@ function sourceInfo(): VideoFileInfo {
     fps: 30,
     videoCodec: 'h264',
     audioCodec: 'aac',
-    sizeBytes: 0
+    audioStreamCount: 1,
+    sizeBytes: 0,
+    ...overrides
   }
 }
 
@@ -82,12 +84,12 @@ beforeAll(() => {
 }, 180_000)
 
 d('long-form render plan executes on real ffmpeg', () => {
-  it('produces a valid mp4 with expected duration and geometry', () => {
+  it('produces intro section + gameplay + end screen with expected total duration', () => {
     const outputPath = path.join(dir, 'longform.mp4')
     const plan = buildRenderPlan({
       source: sourceInfo(),
       mode: 'longform',
-      trim: makeTrim({ trimStartSec: 2, trimEndSec: 3 }), // 35 s output
+      trim: makeTrim({ trimStartSec: 2, trimEndSec: 3 }), // 35 s gameplay
       short: makeShort(),
       template: makeTemplate({ introDurationSec: 4, outroDurationSec: 5 }),
       render: makeRender({ quality: 'fast' }),
@@ -105,18 +107,19 @@ d('long-form render plan executes on real ffmpeg', () => {
     expect(info.width).toBe(1280)
     expect(info.height).toBe(720)
     expect(info.hasAudio).toBe(true)
-    expect(Math.abs(info.durationSec - 35)).toBeLessThan(0.6)
+    // intro 4 + gameplay 35 + outro 5 - two 0.5 s crossfades
+    expect(Math.abs(info.durationSec - 43)).toBeLessThan(0.6)
   }, 300_000)
 
-  it('supports every intro animation style', () => {
+  it('supports every intro animation style (black section background)', () => {
     for (const introStyle of ['fade', 'slide-up', 'zoom'] as const) {
       const outputPath = path.join(dir, `style-${introStyle}.mp4`)
       const plan = buildRenderPlan({
         source: sourceInfo(),
         mode: 'longform',
-        trim: makeTrim({ trimStartSec: 0, trimEndSec: 25 }), // keep it short: 15 s
+        trim: makeTrim({ trimStartSec: 0, trimEndSec: 25 }), // 15 s gameplay
         short: makeShort(),
-        template: makeTemplate({ introStyle, introDurationSec: 3, outroDurationSec: 3 }),
+        template: makeTemplate({ introStyle, introDurationSec: 3, outroDurationSec: 4 }),
         render: makeRender({ quality: 'fast', normalizeAudio: false }),
         encoderName: 'libx264',
         introCardPath: introPath,
@@ -126,8 +129,56 @@ d('long-form render plan executes on real ffmpeg', () => {
       })
       const res = spawnSync('ffmpeg', ['-hide_banner', '-y', ...plan.args], { timeout: 300_000 })
       expect(res.status, `${introStyle}: ${res.stderr?.toString().slice(-2000)}`).toBe(0)
+      const info = probe(outputPath)
+      expect(Math.abs(info.durationSec - (3 + 15 + 4 - 1))).toBeLessThan(0.6)
     }
   }, 600_000)
+
+  it('mixes multi-track recordings so audio survives an empty first track', () => {
+    // Track 0 silent, track 1 audible — the OBS layout that used to render mute.
+    const multiPath = path.join(dir, 'multitrack.mp4')
+    execFileSync('ffmpeg', [
+      '-y',
+      '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30',
+      '-f', 'lavfi', '-i', 'anullsrc=sample_rate=44100:channel_layout=stereo',
+      '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100',
+      '-map', '0:v', '-map', '1:a', '-map', '2:a',
+      '-t', '20', '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', multiPath
+    ], { timeout: 120_000 })
+
+    const outputPath = path.join(dir, 'multitrack-out.mp4')
+    const plan = buildRenderPlan({
+      source: sourceInfo({ path: multiPath, durationSec: 20, width: 640, height: 360, audioStreamCount: 2 }),
+      mode: 'longform',
+      trim: makeTrim(),
+      short: makeShort(),
+      template: makeTemplate({ introDurationSec: 3, outroDurationSec: 4 }),
+      render: makeRender({ quality: 'fast', normalizeAudio: false }),
+      encoderName: 'libx264',
+      introCardPath: introPath,
+      outroCardPath: outroPath,
+      backdrop: null,
+      outputPath
+    })
+    const res = spawnSync('ffmpeg', ['-hide_banner', '-y', ...plan.args], { timeout: 300_000 })
+    expect(res.status, res.stderr?.toString().slice(-2000)).toBe(0)
+
+    // The output must contain real signal, not silence.
+    const vol = execFileSync('ffmpeg', [
+      '-hide_banner', '-i', outputPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-'
+    ], { timeout: 60_000, stdio: ['ignore', 'pipe', 'pipe'] })
+    const stderr = String(vol) // volumedetect writes to stderr; execFileSync merges? capture below
+    const m = /mean_volume:\s*(-?\d+(\.\d+)?) dB/.exec(stderr)
+    // Fallback: rerun capturing stderr explicitly if needed
+    let mean = m ? Number(m[1]) : null
+    if (mean === null) {
+      const r2 = spawnSync('ffmpeg', ['-hide_banner', '-i', outputPath, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-'], { timeout: 60_000 })
+      const m2 = /mean_volume:\s*(-?\d+(\.\d+)?) dB/.exec(String(r2.stderr))
+      mean = m2 ? Number(m2[1]) : null
+    }
+    expect(mean).not.toBeNull()
+    expect(mean!).toBeGreaterThan(-40) // a silent render would be ~-91 dB
+  }, 300_000)
 })
 
 d('loudness analysis on real ffmpeg', () => {

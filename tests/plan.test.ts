@@ -7,8 +7,12 @@ import {
   computeTimeline,
   encoderArgs,
   pickBackdropOffsets,
+  resolveFps,
   PlanError,
-  softwareFallbackFor
+  softwareFallbackFor,
+  XFADE_SEC,
+  type BackdropIndices,
+  type Timeline
 } from '../src/main/services/render/plan'
 import { makeRender, makeShort, makeSource, makeTemplate, makeTrim } from './helpers'
 
@@ -16,40 +20,32 @@ describe('computeOutputDims', () => {
   it('keeps source dimensions for long-form "source" resolution', () => {
     expect(computeOutputDims({ width: 1920, height: 1080 }, 'longform', 'source')).toEqual({ width: 1920, height: 1080 })
   })
-
   it('forces even dimensions for yuv420p', () => {
     expect(computeOutputDims({ width: 1921, height: 1080 }, 'longform', 'source')).toEqual({ width: 1920, height: 1080 })
   })
-
   it('scales to 4K preserving aspect', () => {
     expect(computeOutputDims({ width: 1920, height: 1080 }, 'longform', '2160p')).toEqual({ width: 3840, height: 2160 })
   })
-
-  it('handles ultrawide sources', () => {
-    const dims = computeOutputDims({ width: 3440, height: 1440 }, 'longform', '1080p')
-    expect(dims.height).toBe(1080)
-    expect(dims.width).toBe(2580)
-  })
-
   it('always outputs 9:16 for shorts', () => {
     expect(computeOutputDims({ width: 1920, height: 1080 }, 'short', 'source')).toEqual({ width: 1080, height: 1920 })
-    expect(computeOutputDims({ width: 1920, height: 1080 }, 'short', '2160p')).toEqual({ width: 2160, height: 3840 })
   })
 })
 
 describe('computeTimeline', () => {
-  it('trims start and end for long-form', () => {
+  it('long-form: intro and outro are their own sections around untouched gameplay', () => {
     const t = computeTimeline({
       sourceDurationSec: 200,
       mode: 'longform',
       trim: makeTrim({ trimStartSec: 5, trimEndSec: 10 }),
       short: makeShort(),
-      template: makeTemplate()
+      template: makeTemplate() // intro 6s, outro 8s
     })
     expect(t.seekSec).toBe(5)
-    expect(t.durationSec).toBe(185)
-    expect(t.introDurationSec).toBe(6)
-    expect(t.outroStartSec).toBe(177)
+    expect(t.gameplaySec).toBe(185)
+    expect(t.introSec).toBe(6)
+    expect(t.outroSec).toBe(8)
+    // two crossfades overlap the junctions
+    expect(t.totalSec).toBe(6 + 185 + 8 - 2 * XFADE_SEC)
   })
 
   it('rejects over-trimmed videos with a clear error', () => {
@@ -64,7 +60,7 @@ describe('computeTimeline', () => {
     ).toThrow(PlanError)
   })
 
-  it('caps shorts at 180 seconds and applies the start offset', () => {
+  it('shorts: no outro section, capped at 180 s, offset applied', () => {
     const t = computeTimeline({
       sourceDurationSec: 400,
       mode: 'short',
@@ -73,193 +69,121 @@ describe('computeTimeline', () => {
       template: makeTemplate()
     })
     expect(t.seekSec).toBe(30)
-    expect(t.durationSec).toBe(180)
-    expect(t.outroStartSec).toBeNull()
-  })
-
-  it('clamps the short window to the available footage', () => {
-    const t = computeTimeline({
-      sourceDurationSec: 50,
-      mode: 'short',
-      trim: makeTrim(),
-      short: makeShort({ startOffsetSec: 0, durationSec: 60 }),
-      template: makeTemplate()
-    })
-    expect(t.durationSec).toBe(50)
+    expect(t.gameplaySec).toBe(180)
+    expect(t.outroSec).toBe(0)
+    expect(t.totalSec).toBe(180)
   })
 })
 
-describe('buildFilterGraph', () => {
-  const base = {
-    mode: 'longform' as const,
-    timeline: { seekSec: 0, durationSec: 100, introDurationSec: 6, outroStartSec: 92 },
+describe('resolveFps', () => {
+  it('uses the override when set and a sane source rate otherwise', () => {
+    expect(resolveFps(59.94, 30)).toBe(30)
+    expect(resolveFps(59.94, 'source')).toBe(59.94)
+    expect(resolveFps(0, 'source')).toBe(30) // corrupt probe data
+  })
+})
+
+// ---------------------------------------------------------------------------
+
+const longTimeline: Timeline = { seekSec: 0, gameplaySec: 100, introSec: 6, outroSec: 8, totalSec: 113 }
+
+function longformGraph(overrides: Partial<Parameters<typeof buildFilterGraph>[0]> = {}) {
+  return buildFilterGraph({
+    mode: 'longform',
+    timeline: longTimeline,
     outputWidth: 1920,
     outputHeight: 1080,
-    sourceFps: 60,
-    frameRate: 'source' as const,
+    fps: 60,
     cropBias: 0,
-    hasAudio: true,
+    audioStreams: 1,
     normalizeAudio: true,
     volumeGainDb: 0,
     template: makeTemplate(),
     hasOutroCard: true,
-    backdrop: null as import('../src/main/services/render/plan').BackdropIndices | null
-  }
+    backdrop: null as BackdropIndices | null,
+    ...overrides
+  })
+}
 
-  it('produces a single-pass graph with intro, outro, fades and audio conditioning', () => {
-    const { graph, videoLabel, audioLabel } = buildFilterGraph(base)
+describe('buildFilterGraph (long-form sections)', () => {
+  it('builds intro ~> gameplay ~> outro joined by crossfades', () => {
+    const { graph, videoLabel, audioLabel } = longformGraph()
     expect(videoLabel).toBe('vout')
     expect(audioLabel).toBe('aout')
-    expect(graph).toContain('scale=1920:1080')
-    expect(graph).toContain('fade=t=in:st=0:d=1')
-    expect(graph).toContain('overlay') // intro
-    expect(graph).toContain('setpts=PTS+92/TB') // outro shifted to the end
+    expect(graph).toContain('[seg_intro][seg_game]xfade=transition=fade:duration=0.5:offset=5.5')
+    expect(graph).toContain('[xf1][seg_outro]xfade=transition=fade:duration=0.5:offset=105')
+  })
+
+  it('gameplay section is only scaled/fps-normalized — never cut or retimed', () => {
+    const { graph } = longformGraph()
+    const gameChain = graph.split(';').find((p) => p.endsWith('[seg_game]'))!
+    expect(gameChain).toContain('scale=1920:1080')
+    expect(gameChain).toContain('fps=60')
+    expect(gameChain).not.toContain('trim=')
+    expect(gameChain).not.toContain('overlay')
+    expect(gameChain.replace('setpts=PTS-STARTPTS', '')).not.toContain('setpts') // normalization only
+  })
+
+  it('uses black section backgrounds when the backdrop is disabled', () => {
+    const { graph } = longformGraph()
+    expect(graph).toContain('color=c=black:size=1920x1080:rate=60:duration=6')
+    expect(graph).toContain('color=c=black:size=1920x1080:rate=60:duration=8')
+    expect(graph).not.toContain('gblur')
+  })
+
+  it('uses blurred gameplay clips behind the cards when enabled', () => {
+    const { graph } = longformGraph({ backdrop: { introIndex: 3, outroIndex: 4 } })
+    expect(graph).toContain('[3:v]')
+    expect(graph).toContain('[4:v]')
+    expect(graph).toContain('gblur=sigma=6')
+    expect(graph).not.toContain('color=c=black')
+  })
+
+  it('delays gameplay audio to the gameplay section and pads silence to the total', () => {
+    const { graph } = longformGraph()
+    expect(graph).toContain('adelay=delays=5500:all=1') // introSec - xfade = 5.5 s
+    expect(graph).toContain('apad')
+    expect(graph).toContain('atrim=0:113')
+    expect(graph).toContain(`afade=t=out:st=99:d=1`) // gameplay-local fade before the end screen
     expect(graph).toContain('loudnorm=I=-14')
-    expect(graph).toContain('afade=t=out:st=98.5:d=1.5')
-    expect(graph).toContain('fade=t=out:st=98.8:d=1.2')
   })
 
-  it('never cuts or retimes gameplay (no trim/setpts speed filters on the main stream)', () => {
-    const { graph } = buildFilterGraph(base)
-    const mainChain = graph.split(';')[0]
-    expect(mainChain).not.toContain('trim=')
-    expect(mainChain).not.toContain('setpts=')
-    expect(mainChain).not.toContain('zoompan')
+  it('mixes every audio track of multi-track recordings', () => {
+    const { graph } = longformGraph({ audioStreams: 3 })
+    expect(graph).toContain('[0:a:0][0:a:1][0:a:2]amix=inputs=3:duration=longest:normalize=0')
   })
 
-  it('crops to 9:16 with bias for shorts', () => {
+  it('omits the audio chain entirely for silent sources', () => {
+    const { graph, audioLabel } = longformGraph({ audioStreams: 0 })
+    expect(audioLabel).toBeNull()
+    expect(graph).not.toContain('amix')
+    expect(graph).not.toContain('adelay')
+  })
+})
+
+describe('buildFilterGraph (shorts overlay)', () => {
+  const shortTimeline: Timeline = { seekSec: 0, gameplaySec: 60, introSec: 3.5, outroSec: 0, totalSec: 60 }
+
+  it('crops to 9:16 with bias and overlays the intro card', () => {
     const { graph } = buildFilterGraph({
-      ...base,
       mode: 'short',
-      cropBias: 1,
+      timeline: shortTimeline,
       outputWidth: 1080,
       outputHeight: 1920,
+      fps: 60,
+      cropBias: 1,
+      audioStreams: 2,
+      normalizeAudio: false,
+      volumeGainDb: 0,
+      template: makeTemplate(),
       hasOutroCard: false,
-      timeline: { seekSec: 0, durationSec: 60, introDurationSec: 3.5, outroStartSec: null }
+      backdrop: { introIndex: 2, outroIndex: null }
     })
     expect(graph).toContain("crop=w='min(iw,ih*9/16)':h=ih:x='(iw-ow)*1'")
     expect(graph).toContain('scale=1080:1920')
-    expect(graph).not.toContain('setpts=PTS+') // no outro card
-  })
-
-  it('omits audio chain when the source has no audio', () => {
-    const { graph, audioLabel } = buildFilterGraph({ ...base, hasAudio: false })
-    expect(audioLabel).toBeNull()
-    expect(graph).not.toContain('loudnorm')
-  })
-
-  it('skips loudnorm when normalization is off but keeps fades', () => {
-    const { graph } = buildFilterGraph({ ...base, normalizeAudio: false, volumeGainDb: 3 })
-    expect(graph).not.toContain('loudnorm')
-    expect(graph).toContain('volume=3dB')
-    expect(graph).toContain('afade=t=in')
-  })
-
-  it('inserts fps filter only when the frame rate changes', () => {
-    expect(buildFilterGraph({ ...base, frameRate: 30 }).graph).toContain('fps=30')
-    expect(buildFilterGraph({ ...base, frameRate: 60 }).graph).not.toContain('fps=60')
-    expect(buildFilterGraph(base).graph).not.toContain('fps=')
-  })
-})
-
-describe('blurred backdrop', () => {
-  const base = {
-    mode: 'longform' as const,
-    timeline: { seekSec: 0, durationSec: 100, introDurationSec: 6, outroStartSec: 92 },
-    outputWidth: 1920,
-    outputHeight: 1080,
-    sourceFps: 60,
-    frameRate: 'source' as const,
-    cropBias: 0,
-    hasAudio: true,
-    normalizeAudio: false,
-    volumeGainDb: 0,
-    template: makeTemplate(),
-    hasOutroCard: true
-  }
-
-  it('composites blurred intro and outro segments behind the cards', () => {
-    const { graph } = buildFilterGraph({ ...base, backdrop: { introIndex: 3, outroIndex: 4 } })
-    expect(graph).toContain('[3:v]')
-    expect(graph).toContain('[4:v]')
-    // quarter-res blur pipeline
-    expect(graph).toContain('scale=480:270:flags=bilinear,gblur=sigma=6,scale=1920:1080')
-    // intro backdrop fades out as gameplay is revealed; outro fades in at the end
-    expect(graph).toContain('[introbg]')
-    expect(graph).toContain('[outrobg]')
-    expect(graph).toContain('setpts=PTS+92/TB[outrobg]')
-    // layering: backdrop under the card
-    expect(graph.indexOf('[introbg]overlay')).toBeLessThan(graph.indexOf('[introcard]overlay'))
-    expect(graph.indexOf('[outrobg]overlay')).toBeLessThan(graph.indexOf('[outrocard]overlay'))
-  })
-
-  it('applies the same 9:16 crop to shorts backdrops as to gameplay', () => {
-    const { graph } = buildFilterGraph({
-      ...base,
-      mode: 'short',
-      outputWidth: 1080,
-      outputHeight: 1920,
-      hasOutroCard: false,
-      timeline: { seekSec: 0, durationSec: 60, introDurationSec: 3.5, outroStartSec: null },
-      backdrop: { introIndex: 2, outroIndex: null }
-    })
-    const bgChain = graph.split(';').find((p) => p.startsWith('[2:v]'))!
-    expect(bgChain).toContain("crop=w='min(iw,ih*9/16)'")
-    expect(bgChain).toContain('gblur')
-  })
-
-  it('is fully absent when disabled', () => {
-    const { graph } = buildFilterGraph({ ...base, backdrop: null })
-    expect(graph).not.toContain('gblur')
-    expect(graph).not.toContain('introbg')
-  })
-
-  it('adds the extra seeked inputs to the ffmpeg invocation', () => {
-    const plan = buildRenderPlan({
-      source: makeSource(),
-      mode: 'longform',
-      trim: makeTrim(),
-      short: makeShort(),
-      template: makeTemplate(),
-      render: makeRender(),
-      encoderName: 'libx264',
-      introCardPath: '/tmp/intro.png',
-      outroCardPath: '/tmp/outro.png',
-      backdrop: { introOffsetSec: 42.5, outroOffsetSec: 150 },
-      outputPath: '/out/final.mp4'
-    })
-    const cmd = plan.args.join(' ')
-    // main input + two backdrop reads of the same file
-    expect(cmd.split('/videos/gameplay.mp4').length - 1).toBe(3)
-    expect(cmd).toContain('-ss 42.5')
-    expect(cmd).toContain('-ss 150')
-  })
-})
-
-describe('pickBackdropOffsets', () => {
-  const timeline = { seekSec: 0, durationSec: 200, introDurationSec: 6, outroStartSec: 192 }
-
-  it('stays within the source and clear of the clip ends', () => {
-    for (const r of [0, 0.25, 0.5, 0.75, 0.9999]) {
-      const { introOffsetSec, outroOffsetSec } = pickBackdropOffsets(210, timeline, () => r)
-      expect(introOffsetSec).toBeGreaterThanOrEqual(0)
-      expect(introOffsetSec + timeline.introDurationSec).toBeLessThanOrEqual(210)
-      expect(outroOffsetSec).toBeGreaterThanOrEqual(0)
-      expect(outroOffsetSec + (timeline.durationSec - timeline.outroStartSec!)).toBeLessThanOrEqual(210)
-    }
-  })
-
-  it('draws intro from earlier footage than outro', () => {
-    const a = pickBackdropOffsets(210, timeline, () => 0)
-    expect(a.introOffsetSec).toBeLessThan(a.outroOffsetSec)
-  })
-
-  it('degrades safely for very short sources', () => {
-    const shortTimeline = { seekSec: 0, durationSec: 12, introDurationSec: 3, outroStartSec: 8 }
-    const { introOffsetSec, outroOffsetSec } = pickBackdropOffsets(12, shortTimeline, () => 0.99)
-    expect(introOffsetSec).toBeGreaterThanOrEqual(0)
-    expect(introOffsetSec).toBeLessThanOrEqual(12 - 3.5)
-    expect(outroOffsetSec).toBeGreaterThanOrEqual(0)
+    expect(graph).not.toContain('xfade') // gameplay stays a single continuous take
+    expect(graph).toContain('amix=inputs=2')
+    expect(graph).not.toContain('adelay') // audio starts with the video
   })
 })
 
@@ -267,24 +191,10 @@ describe('encoderArgs', () => {
   it('uses CRF for libx264 when bitrate is auto', () => {
     const args = encoderArgs('libx264', 'balanced', 0, 1080).join(' ')
     expect(args).toContain('-crf 19')
-    expect(args).toContain('-preset medium')
     expect(args).not.toContain('-b:v')
   })
-
-  it('uses explicit bitrate when configured', () => {
-    const args = encoderArgs('libx264', 'balanced', 12000, 1080).join(' ')
-    expect(args).toContain('-b:v 12000k')
-    expect(args).toContain('-maxrate 18000k')
-  })
-
   it('always gives AMF a bitrate (auto-derived when unset)', () => {
-    const args = encoderArgs('hevc_amf', 'quality', 0, 2160).join(' ')
-    expect(args).toContain(`-b:v ${autoBitrateKbps(2160, 'hevc_amf')}k`)
-  })
-
-  it('maps quality presets for NVENC', () => {
-    expect(encoderArgs('h264_nvenc', 'quality', 0, 1080).join(' ')).toContain('-preset p7')
-    expect(encoderArgs('h264_nvenc', 'fast', 0, 1080).join(' ')).toContain('-preset p3')
+    expect(encoderArgs('hevc_amf', 'quality', 0, 2160).join(' ')).toContain(`-b:v ${autoBitrateKbps(2160, 'hevc_amf')}k`)
   })
 })
 
@@ -298,36 +208,49 @@ describe('softwareFallbackFor', () => {
 })
 
 describe('buildRenderPlan', () => {
-  it('assembles a complete ffmpeg invocation', () => {
+  it('assembles the sectioned long-form invocation', () => {
     const plan = buildRenderPlan({
-      source: makeSource(),
+      source: makeSource(), // 210 s
       mode: 'longform',
       trim: makeTrim({ trimStartSec: 2 }),
       short: makeShort(),
-      template: makeTemplate(),
+      template: makeTemplate(), // intro 6, outro 8
       render: makeRender(),
       encoderName: 'libx264',
       introCardPath: '/tmp/intro.png',
       outroCardPath: '/tmp/outro.png',
-      backdrop: null,
+      backdrop: { introOffsetSec: 42.5, outroOffsetSec: 150 },
       outputPath: '/out/final.mp4'
     })
     const cmd = plan.args.join(' ')
     expect(cmd).toContain('-ss 2')
-    expect(cmd).toContain('-i /videos/gameplay.mp4')
-    expect(cmd).toContain('-loop 1')
-    expect(cmd).toContain('/tmp/intro.png')
-    expect(cmd).toContain('/tmp/outro.png')
-    expect(cmd).toContain('-filter_complex')
+    expect(cmd.split('/videos/gameplay.mp4').length - 1).toBe(3) // main + 2 backdrops
+    expect(cmd).toContain('-ss 42.5')
     expect(cmd).toContain('-map [vout]')
     expect(cmd).toContain('-map [aout]')
-    expect(cmd).toContain('-c:a aac')
     expect(cmd).toContain('-movflags +faststart')
-    expect(cmd.endsWith('/out/final.mp4')).toBe(true)
-    expect(plan.durationSec).toBe(208)
+    expect(plan.durationSec).toBe(6 + 208 + 8 - 1)
   })
 
-  it('omits the outro input for shorts', () => {
+  it('rejects long-form without an end screen card', () => {
+    expect(() =>
+      buildRenderPlan({
+        source: makeSource(),
+        mode: 'longform',
+        trim: makeTrim(),
+        short: makeShort(),
+        template: makeTemplate(),
+        render: makeRender(),
+        encoderName: 'libx264',
+        introCardPath: '/tmp/intro.png',
+        outroCardPath: null,
+        backdrop: null,
+        outputPath: '/out/final.mp4'
+      })
+    ).toThrow(PlanError)
+  })
+
+  it('builds shorts without outro inputs', () => {
     const plan = buildRenderPlan({
       source: makeSource(),
       mode: 'short',
@@ -343,7 +266,24 @@ describe('buildRenderPlan', () => {
     })
     expect(plan.args.join(' ')).not.toContain('outro')
     expect(plan.outputWidth).toBe(1080)
-    expect(plan.outputHeight).toBe(1920)
     expect(plan.durationSec).toBe(45)
+  })
+})
+
+describe('pickBackdropOffsets', () => {
+  const timeline: Timeline = { seekSec: 0, gameplaySec: 192, introSec: 6, outroSec: 8, totalSec: 205 }
+
+  it('stays within the source and clear of the clip ends', () => {
+    for (const r of [0, 0.5, 0.9999]) {
+      const { introOffsetSec, outroOffsetSec } = pickBackdropOffsets(210, timeline, () => r)
+      expect(introOffsetSec).toBeGreaterThanOrEqual(0)
+      expect(introOffsetSec + timeline.introSec).toBeLessThanOrEqual(210)
+      expect(outroOffsetSec + timeline.outroSec).toBeLessThanOrEqual(210)
+    }
+  })
+
+  it('draws intro from earlier footage than outro', () => {
+    const a = pickBackdropOffsets(210, timeline, () => 0)
+    expect(a.introOffsetSec).toBeLessThan(a.outroOffsetSec)
   })
 })

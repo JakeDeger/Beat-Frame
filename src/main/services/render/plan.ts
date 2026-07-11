@@ -8,23 +8,23 @@ import type {
 } from '@shared/types'
 
 /**
- * Pure render-plan builder. Given the probed source, user options and the
- * pre-rendered title cards, it produces the complete ffmpeg argument list for
- * a SINGLE-PASS encode: trim + scale + intro/outro overlays + fades + audio
- * conditioning all happen in one filtergraph, so the gameplay itself is never
- * re-encoded twice and no intermediate files are written.
+ * Pure render-plan builder producing a SINGLE-PASS ffmpeg invocation.
  *
- * Editing philosophy (deliberate): gameplay is untouched — no cuts, no zooms,
- * no speed changes. The only video operations are the intro/outro overlays at
- * the very edges and a fade-in/fade-out.
+ * Long-form structure (v1.4): three real sections joined by crossfades —
+ *
+ *   [ intro section ]  ~>  [ gameplay, untouched ]  ~>  [ end screen ]
+ *    blurred clip of       full recording with its     blurred clip +
+ *    the gameplay (or      own audio, no cuts, no      end card, audio
+ *    black) + title card   effects, no retiming        faded to silence
+ *
+ * The gameplay's audio starts with the gameplay section (the intro is
+ * musically silent, like a cold open) and every audio track in the source is
+ * mixed together — OBS-style multi-track recordings previously played only
+ * the first track, which is often empty.
+ *
+ * Shorts keep the compact overlay intro (a separate intro section would waste
+ * precious seconds of a ≤3-minute vertical video).
  */
-
-export interface BackdropOffsets {
-  /** Seek (seconds, in source time) of the clip blurred behind the intro card */
-  introOffsetSec: number
-  /** Seek (seconds, in source time) of the clip blurred behind the end screen */
-  outroOffsetSec: number
-}
 
 export interface RenderPlanInput {
   source: VideoFileInfo
@@ -38,9 +38,16 @@ export interface RenderPlanInput {
   introCardPath: string
   /** Only used in long-form mode */
   outroCardPath: string | null
-  /** Blurred-gameplay card backdrops; null disables the effect */
+  /** Blurred-gameplay backdrops; null = plain black behind the cards */
   backdrop: BackdropOffsets | null
   outputPath: string
+}
+
+export interface BackdropOffsets {
+  /** Seek (seconds, in source time) of the clip behind the intro card */
+  introOffsetSec: number
+  /** Seek (seconds, in source time) of the clip behind the end screen */
+  outroOffsetSec: number
 }
 
 export interface RenderPlan {
@@ -60,6 +67,8 @@ export class PlanError extends Error {
 }
 
 const SHORT_MAX_DURATION = 180
+/** Crossfade length at each section junction (long-form). */
+export const XFADE_SEC = 0.5
 
 // ---------------------------------------------------------------------------
 // Output geometry
@@ -71,12 +80,10 @@ export function computeOutputDims(
   resolution: RenderSettings['resolution']
 ): { width: number; height: number } {
   if (mode === 'short') {
-    // Vertical 9:16. "source"/"1080p" -> 1080x1920, 1440p -> 1440x2560, 4K -> 2160x3840.
     const h = resolution === '2160p' ? 3840 : resolution === '1440p' ? 2560 : 1920
     return { width: (h * 9) / 16, height: h }
   }
   if (resolution === 'source') {
-    // Keep dimensions even for yuv420p.
     return { width: source.width - (source.width % 2), height: source.height - (source.height % 2) }
   }
   const targetH = resolution === '2160p' ? 2160 : resolution === '1440p' ? 1440 : 1080
@@ -93,11 +100,14 @@ export function computeOutputDims(
 export interface Timeline {
   /** Seek into the source file (seconds) */
   seekSec: number
-  /** Output duration (seconds) */
-  durationSec: number
-  introDurationSec: number
-  /** Time the outro card starts fading in; null when no outro */
-  outroStartSec: number | null
+  /** Gameplay length used (seconds, after trim / Short windowing) */
+  gameplaySec: number
+  /** Intro section (long-form) or intro overlay (Shorts) length */
+  introSec: number
+  /** End-screen section length; 0 for Shorts */
+  outroSec: number
+  /** Final output duration */
+  totalSec: number
 }
 
 export function computeTimeline(input: {
@@ -118,38 +128,40 @@ export function computeTimeline(input: {
   if (mode === 'short') {
     const startOffset = clamp(short.startOffsetSec, 0, Math.max(0, available - 5))
     const duration = clamp(short.durationSec, 5, Math.min(SHORT_MAX_DURATION, available - startOffset))
-    const introDuration = clamp(Math.min(3.5, template.introDurationSec), 1.5, Math.min(5, duration / 3))
+    const intro = clamp(Math.min(3.5, template.introDurationSec), 1.5, Math.min(5, duration / 3))
     return {
-      seekSec: trimStart + startOffset,
-      durationSec: round3(duration),
-      introDurationSec: round3(introDuration),
-      outroStartSec: null
+      seekSec: round3(trimStart + startOffset),
+      gameplaySec: round3(duration),
+      introSec: round3(intro),
+      outroSec: 0,
+      totalSec: round3(duration)
     }
   }
 
-  const introDuration = clamp(template.introDurationSec, 2, Math.min(15, available / 4))
-  const outroDuration = clamp(template.outroDurationSec, 3, Math.min(20, available / 4))
+  const intro = clamp(template.introDurationSec, 3, 15)
+  const outro = clamp(template.outroDurationSec, 4, 20)
   return {
-    seekSec: trimStart,
-    durationSec: round3(available),
-    introDurationSec: round3(introDuration),
-    outroStartSec: round3(available - outroDuration)
+    seekSec: round3(trimStart),
+    gameplaySec: round3(available),
+    introSec: round3(intro),
+    outroSec: round3(outro),
+    // Sections overlap by one crossfade at each of the two junctions.
+    totalSec: round3(intro + available + outro - 2 * XFADE_SEC)
   }
 }
 
 /**
- * Pick random source positions for the blurred card backdrops. The intro clip
- * comes from the early-middle of the recording and the outro clip from the
- * later half, so the two moments look distinct. `rand` is injected for
- * deterministic tests.
+ * Pick source positions for the card backdrops: intro clip from the
+ * early-middle of the recording, outro clip from the later half. `rand` is
+ * injected for deterministic tests.
  */
 export function pickBackdropOffsets(
   sourceDurationSec: number,
   timeline: Timeline,
   rand: () => number = Math.random
 ): BackdropOffsets {
-  const introLen = timeline.introDurationSec + 0.5
-  const outroLen = (timeline.outroStartSec !== null ? timeline.durationSec - timeline.outroStartSec : 0) + 0.5
+  const introLen = timeline.introSec + 0.5
+  const outroLen = timeline.outroSec + 0.5
 
   const pick = (min: number, max: number, clipLen: number): number => {
     const upper = sourceDurationSec - clipLen
@@ -165,38 +177,36 @@ export function pickBackdropOffsets(
 }
 
 // ---------------------------------------------------------------------------
-// Filtergraph
+// Card animation helpers
 // ---------------------------------------------------------------------------
 
-function introCardFilter(timeline: Timeline, template: TemplateConfig, streamIn: string, streamOut: string): string {
-  const introEnd = timeline.introDurationSec
-  const fadeOutStart = round3(Math.max(0.5, introEnd - 0.7))
+function introCardFilter(introSec: number, template: TemplateConfig, streamIn: string, streamOut: string): string {
+  const fadeOutStart = round3(Math.max(0.5, introSec - 0.7))
   let chain = `[${streamIn}]format=rgba,fade=t=in:st=0.25:d=0.6:alpha=1,fade=t=out:st=${fadeOutStart}:d=0.7:alpha=1`
   if (template.introStyle === 'zoom') {
-    // Card is enlarged once; the overlay position drifts to fake a slow zoom.
     chain += `,scale=iw*1.06:ih*1.06`
   }
   chain += `[${streamOut}]`
   return chain
 }
 
-function introOverlayXY(template: TemplateConfig, introDurationSec: number): string {
+function introOverlayXY(template: TemplateConfig, introSec: number): string {
   if (template.introStyle === 'slide-up') {
-    // Ease-out slide from 3% below final position over the first 0.8 s.
     return `x=0:y='(H*0.03)*pow(1-min(t/0.8,1),3)'`
   }
   if (template.introStyle === 'zoom') {
-    // 106%-sized card drifts from centered to slightly up-left across the intro.
-    const d = round3(Math.max(1, introDurationSec))
+    const d = round3(Math.max(1, introSec))
     return `x='-(W*0.03)*(t/${d})':y='-(H*0.03)*(t/${d})'`
   }
   return 'x=0:y=0'
 }
 
+// ---------------------------------------------------------------------------
+// Filtergraph
+// ---------------------------------------------------------------------------
+
 export interface BackdropIndices {
-  /** ffmpeg input index of the intro backdrop segment */
   introIndex: number
-  /** ffmpeg input index of the outro backdrop segment (long-form only) */
   outroIndex: number | null
 }
 
@@ -205,92 +215,128 @@ export function buildFilterGraph(input: {
   timeline: Timeline
   outputWidth: number
   outputHeight: number
-  sourceFps: number
-  frameRate: RenderSettings['frameRate']
+  /** Concrete output frame rate — every section is normalized to it */
+  fps: number
   cropBias: number
-  hasAudio: boolean
+  /** Number of audio streams in the source (0 = silent output, >1 = mixed) */
+  audioStreams: number
   normalizeAudio: boolean
   volumeGainDb: number
   template: TemplateConfig
   hasOutroCard: boolean
-  /** When set, blurred gameplay segments are composited behind the cards */
   backdrop: BackdropIndices | null
 }): { graph: string; videoLabel: string; audioLabel: string | null } {
-  const { mode, timeline, outputWidth, outputHeight, template } = input
+  const { mode, timeline, outputWidth, outputHeight, template, fps } = input
   const parts: string[] = []
-  const D = timeline.durationSec
 
-  // Crop chain shared by the main stream and backdrop segments (shorts only),
-  // so backdrops fill the same 9:16 frame as the gameplay.
   const biasFactor = round3(clamp((input.cropBias + 1) / 2, 0, 1))
   const cropChain = mode === 'short' ? `crop=w='min(iw,ih*9/16)':h=ih:x='(iw-ow)*${biasFactor}':y=0,` : ''
 
-  // --- base video ---
-  let base = `[0:v]${cropChain}scale=${outputWidth}:${outputHeight}:flags=lanczos`
-  if (input.frameRate !== 'source' && input.frameRate !== input.sourceFps) {
-    base += `,fps=${input.frameRate}`
-  }
-  const fadeInDur = mode === 'short' ? 0.5 : 1.0
-  base += `,setsar=1,fade=t=in:st=0:d=${fadeInDur}[base]`
-  parts.push(base)
-
-  let lastVideo = 'base'
-
-  // Fast full-frame blur: quarter-res downscale → gaussian blur → upscale.
+  // Quarter-res blur pipeline for backdrops.
   const blurW = Math.max(2, Math.round(outputWidth / 4 / 2) * 2)
   const blurH = Math.max(2, Math.round(outputHeight / 4 / 2) * 2)
-  const blurChain = `${cropChain}scale=${blurW}:${blurH}:flags=bilinear,gblur=sigma=6,scale=${outputWidth}:${outputHeight}:flags=bilinear,setsar=1`
+  const blurChain = `${cropChain}scale=${blurW}:${blurH}:flags=bilinear,gblur=sigma=6,scale=${outputWidth}:${outputHeight}:flags=bilinear`
 
-  // --- intro backdrop: blurred random gameplay behind the title card ---
-  if (input.backdrop) {
-    const introEnd = timeline.introDurationSec
-    const bgFadeOutStart = round3(Math.max(0.3, introEnd - 0.6))
-    parts.push(
-      `[${input.backdrop.introIndex}:v]${blurChain},fade=t=in:st=0:d=${fadeInDur},format=rgba,fade=t=out:st=${bgFadeOutStart}:d=0.6:alpha=1[introbg]`
-    )
-    parts.push(`[${lastVideo}][introbg]overlay=x=0:y=0:eof_action=pass[bgin]`)
-    lastVideo = 'bgin'
-  }
-
-  // --- intro card ---
-  parts.push(introCardFilter(timeline, template, '1:v', 'introcard'))
-  parts.push(
-    `[${lastVideo}][introcard]overlay=${introOverlayXY(template, timeline.introDurationSec)}:eof_action=pass[vintro]`
-  )
-  lastVideo = 'vintro'
-
-  // --- outro backdrop + card (long-form only) ---
-  if (input.hasOutroCard && timeline.outroStartSec !== null) {
-    const outroStart = round3(timeline.outroStartSec)
-    if (input.backdrop?.outroIndex != null) {
+  /** Backdrop (blurred clip) or plain black, normalized for concatenation. */
+  const sectionBackground = (label: string, inputIndex: number | null, durationSec: number): void => {
+    if (inputIndex !== null) {
       parts.push(
-        `[${input.backdrop.outroIndex}:v]${blurChain},format=rgba,fade=t=in:st=0:d=0.8:alpha=1,setpts=PTS+${outroStart}/TB[outrobg]`
+        `[${inputIndex}:v]${blurChain},fps=${fps},setsar=1,trim=duration=${durationSec},setpts=PTS-STARTPTS,` +
+          `tpad=stop_mode=clone:stop_duration=${durationSec},trim=duration=${durationSec},setpts=PTS-STARTPTS[${label}]`
       )
-      parts.push(`[${lastVideo}][outrobg]overlay=x=0:y=0:eof_action=pass[bgout]`)
-      lastVideo = 'bgout'
+    } else {
+      parts.push(`color=c=black:size=${outputWidth}x${outputHeight}:rate=${fps}:duration=${durationSec},setsar=1[${label}]`)
     }
-    parts.push(
-      `[2:v]format=rgba,fade=t=in:st=0:d=0.8:alpha=1,setpts=PTS+${outroStart}/TB[outrocard]`
-    )
-    parts.push(`[${lastVideo}][outrocard]overlay=x=0:y=0:eof_action=pass[voutro]`)
-    lastVideo = 'voutro'
   }
 
-  // --- final fade to black ---
-  const fadeOutDur = mode === 'short' ? 0.8 : 1.2
-  const fadeOutStart = round3(Math.max(0, D - fadeOutDur))
-  parts.push(`[${lastVideo}]fade=t=out:st=${fadeOutStart}:d=${fadeOutDur},format=yuv420p[vout]`)
-
-  // --- audio ---
   let audioLabel: string | null = null
-  if (input.hasAudio) {
+  const audioSource = (label: string): void => {
+    // Mix every source audio track — multi-track recordings (OBS) often keep
+    // the audible mix on a track other than the first.
+    if (input.audioStreams > 1) {
+      const inputs = Array.from({ length: input.audioStreams }, (_, i) => `[0:a:${i}]`).join('')
+      parts.push(`${inputs}amix=inputs=${input.audioStreams}:duration=longest:normalize=0[${label}]`)
+    } else {
+      parts.push(`[0:a:0]anull[${label}]`)
+    }
+  }
+
+  if (mode === 'short') {
+    // ----- Shorts: overlay intro on the gameplay window (unchanged shape) --
+    const D = timeline.totalSec
+    let base = `[0:v]${cropChain}scale=${outputWidth}:${outputHeight}:flags=lanczos,fps=${fps},setsar=1,fade=t=in:st=0:d=0.5[base]`
+    parts.push(base)
+    let last = 'base'
+    if (input.backdrop) {
+      const bgFadeOutStart = round3(Math.max(0.3, timeline.introSec - 0.6))
+      parts.push(
+        `[${input.backdrop.introIndex}:v]${blurChain},fps=${fps},setsar=1,fade=t=in:st=0:d=0.5,format=rgba,fade=t=out:st=${bgFadeOutStart}:d=0.6:alpha=1[introbg]`
+      )
+      parts.push(`[${last}][introbg]overlay=x=0:y=0:eof_action=pass[bgin]`)
+      last = 'bgin'
+    }
+    parts.push(introCardFilter(timeline.introSec, template, '1:v', 'introcard'))
+    parts.push(`[${last}][introcard]overlay=${introOverlayXY(template, timeline.introSec)}:eof_action=pass[vintro]`)
+    parts.push(`[vintro]fade=t=out:st=${round3(Math.max(0, D - 0.8))}:d=0.8,format=yuv420p[vout]`)
+
+    if (input.audioStreams > 0) {
+      audioSource('amixed')
+      const af: string[] = []
+      if (input.normalizeAudio) af.push('loudnorm=I=-14:TP=-1.5:LRA=11')
+      if (input.volumeGainDb !== 0) af.push(`volume=${round3(input.volumeGainDb)}dB`)
+      af.push('afade=t=in:st=0:d=0.5')
+      af.push(`afade=t=out:st=${round3(Math.max(0, D - 0.8))}:d=0.8`)
+      parts.push(`[amixed]${af.join(',')}[aout]`)
+      audioLabel = 'aout'
+    }
+    return { graph: parts.join(';'), videoLabel: 'vout', audioLabel }
+  }
+
+  // ----- Long-form: intro section ~> gameplay ~> end screen ----------------
+  const I = timeline.introSec
+  const G = timeline.gameplaySec
+  const O = timeline.outroSec
+  const total = timeline.totalSec
+
+  // Intro section: backdrop/black + animated title card, fading in from black.
+  sectionBackground('introbg', input.backdrop ? input.backdrop.introIndex : null, I)
+  parts.push(introCardFilter(I, template, '1:v', 'introcard'))
+  parts.push(
+    `[introbg][introcard]overlay=${introOverlayXY(template, I)}:eof_action=pass,fade=t=in:st=0:d=0.5[seg_intro]`
+  )
+
+  // Gameplay section: exactly as recorded (scale/fps normalization only).
+  parts.push(`[0:v]scale=${outputWidth}:${outputHeight}:flags=lanczos,fps=${fps},setsar=1,setpts=PTS-STARTPTS[seg_game]`)
+
+  // End screen section, fading out to black at the very end (section-local time).
+  sectionBackground('outrobg', input.backdrop ? input.backdrop.outroIndex : null, O)
+  parts.push(`[2:v]format=rgba,fade=t=in:st=0.2:d=0.6:alpha=1[outrocard]`)
+  parts.push(
+    `[outrobg][outrocard]overlay=x=0:y=0:eof_action=pass,fade=t=out:st=${round3(Math.max(0, O - 0.9))}:d=0.9[seg_outro]`
+  )
+
+  // Join with crossfades.
+  const x1Offset = round3(I - XFADE_SEC)
+  const x2Offset = round3(I + G - 2 * XFADE_SEC)
+  parts.push(`[seg_intro][seg_game]xfade=transition=fade:duration=${XFADE_SEC}:offset=${x1Offset}[xf1]`)
+  parts.push(`[xf1][seg_outro]xfade=transition=fade:duration=${XFADE_SEC}:offset=${x2Offset}[xf2]`)
+  parts.push(`[xf2]format=yuv420p[vout]`)
+
+  // Audio: silence under the intro, gameplay audio in the middle, fade to
+  // silence as the end screen arrives.
+  if (input.audioStreams > 0) {
+    audioSource('amixed')
     const af: string[] = []
     if (input.normalizeAudio) af.push('loudnorm=I=-14:TP=-1.5:LRA=11')
     if (input.volumeGainDb !== 0) af.push(`volume=${round3(input.volumeGainDb)}dB`)
-    af.push('afade=t=in:st=0:d=0.5')
-    const aFadeOutDur = mode === 'short' ? 0.8 : 1.5
-    af.push(`afade=t=out:st=${round3(Math.max(0, D - aFadeOutDur))}:d=${aFadeOutDur}`)
-    parts.push(`[0:a]${af.join(',')}[aout]`)
+    af.push('afade=t=in:st=0:d=0.3')
+    const gameplayStart = round3(I - XFADE_SEC)
+    const fadeOutStart = round3(Math.max(0, G - 1.0))
+    af.push(`afade=t=out:st=${fadeOutStart}:d=1.0`)
+    af.push(`adelay=delays=${Math.round(gameplayStart * 1000)}:all=1`)
+    af.push('apad')
+    af.push(`atrim=0:${total}`)
+    parts.push(`[amixed]${af.join(',')}[aout]`)
     audioLabel = 'aout'
   }
 
@@ -301,7 +347,6 @@ export function buildFilterGraph(input: {
 // Encoder arguments
 // ---------------------------------------------------------------------------
 
-/** Auto video bitrate (kbps) used for encoders that need explicit rate control. */
 export function autoBitrateKbps(height: number, encoderName: string): number {
   const base = height >= 2160 ? 45_000 : height >= 1440 ? 24_000 : 12_000
   const efficient = /hevc|265|av1/.test(encoderName)
@@ -355,7 +400,6 @@ export function encoderArgs(encoderName: string, quality: RenderSettings['qualit
   return args
 }
 
-/** Encoder to fall back to when a hardware encoder fails at runtime. */
 export function softwareFallbackFor(encoderName: string): string | null {
   if (encoderName.startsWith('h264_')) return 'libx264'
   if (encoderName.startsWith('hevc_')) return 'libx265'
@@ -366,6 +410,13 @@ export function softwareFallbackFor(encoderName: string): string | null {
 // ---------------------------------------------------------------------------
 // Full plan
 // ---------------------------------------------------------------------------
+
+/** Concrete output fps: explicit override, else the (sane) source rate. */
+export function resolveFps(sourceFps: number, frameRate: RenderSettings['frameRate']): number {
+  if (frameRate !== 'source') return frameRate
+  if (!Number.isFinite(sourceFps) || sourceFps < 10 || sourceFps > 240) return 30
+  return Math.round(sourceFps * 100) / 100
+}
 
 export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
   const { source, mode, template, render } = input
@@ -378,32 +429,32 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
   })
   const dims = computeOutputDims(source, mode, render.resolution)
   const hasOutroCard = mode === 'longform' && !!input.outroCardPath
+  if (mode === 'longform' && !input.outroCardPath) {
+    throw new PlanError('Long-form renders require an end-screen card.')
+  }
+  const fps = resolveFps(source.fps, render.frameRate)
 
   const args: string[] = []
-  // Input 0: gameplay (seek before -i for fast seeking; we re-encode anyway).
-  if (timeline.seekSec > 0) args.push('-ss', String(round3(timeline.seekSec)))
-  args.push('-t', String(round3(timeline.durationSec)), '-i', source.path)
+  // Input 0: gameplay.
+  if (timeline.seekSec > 0) args.push('-ss', String(timeline.seekSec))
+  args.push('-t', String(timeline.gameplaySec), '-i', source.path)
   // Input 1: intro card (looped still).
-  args.push('-loop', '1', '-framerate', '30', '-t', String(round3(timeline.introDurationSec + 0.1)), '-i', input.introCardPath)
-  // Input 2: outro card.
+  args.push('-loop', '1', '-framerate', '30', '-t', String(round3(timeline.introSec + 0.2)), '-i', input.introCardPath)
+  // Input 2: outro card (long-form only).
   let nextIndex = 2
-  if (hasOutroCard && timeline.outroStartSec !== null) {
-    const outroLen = round3(timeline.durationSec - timeline.outroStartSec + 0.1)
-    args.push('-loop', '1', '-framerate', '30', '-t', String(outroLen), '-i', input.outroCardPath!)
+  if (hasOutroCard) {
+    args.push('-loop', '1', '-framerate', '30', '-t', String(round3(timeline.outroSec + 0.2)), '-i', input.outroCardPath!)
     nextIndex = 3
   }
 
-  // Backdrop inputs: short segments of the same recording, blurred behind the
-  // intro/outro cards. Decoding a few extra seconds is cheap.
+  // Backdrop inputs (short seeked reads of the same recording).
   let backdropIndices: BackdropIndices | null = null
   if (input.backdrop) {
-    const introLen = round3(timeline.introDurationSec + 0.3)
-    args.push('-ss', String(round3(input.backdrop.introOffsetSec)), '-t', String(introLen), '-i', source.path)
+    args.push('-ss', String(round3(input.backdrop.introOffsetSec)), '-t', String(round3(timeline.introSec + 0.5)), '-i', source.path)
     const introIndex = nextIndex++
     let outroIndex: number | null = null
-    if (hasOutroCard && timeline.outroStartSec !== null) {
-      const outroLen = round3(timeline.durationSec - timeline.outroStartSec + 0.3)
-      args.push('-ss', String(round3(input.backdrop.outroOffsetSec)), '-t', String(outroLen), '-i', source.path)
+    if (hasOutroCard) {
+      args.push('-ss', String(round3(input.backdrop.outroOffsetSec)), '-t', String(round3(timeline.outroSec + 0.5)), '-i', source.path)
       outroIndex = nextIndex++
     }
     backdropIndices = { introIndex, outroIndex }
@@ -414,10 +465,9 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     timeline,
     outputWidth: dims.width,
     outputHeight: dims.height,
-    sourceFps: source.fps,
-    frameRate: render.frameRate,
+    fps,
     cropBias: input.short.cropBias,
-    hasAudio: source.audioCodec !== null,
+    audioStreams: source.audioCodec !== null ? Math.max(1, source.audioStreamCount ?? 1) : 0,
     normalizeAudio: render.normalizeAudio,
     volumeGainDb: render.volumeGainDb,
     template,
@@ -439,7 +489,7 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     args,
     outputWidth: dims.width,
     outputHeight: dims.height,
-    durationSec: timeline.durationSec,
+    durationSec: timeline.totalSec,
     encoderName: input.encoderName
   }
 }

@@ -64,7 +64,11 @@ export interface Api {
   removeUpload(id: string): Promise<void>
 
   automationItems(): Promise<AutomationItem[]>
-  automationStatus(): Promise<{ watching: boolean }>
+  automationStatus(): Promise<{
+    watching: boolean
+    signedIn: boolean
+    upcoming: Array<{ iso: string; mode: 'longform' | 'short'; title: string }>
+  }>
   automationSetMapId(itemId: string, mapId: string): Promise<void>
   automationApprove(itemId: string, metadata: VideoMetadata | null): Promise<void>
   automationSkip(itemId: string): Promise<void>

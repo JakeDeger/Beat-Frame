@@ -1,14 +1,47 @@
 import { useEffect, useState } from 'react'
-import { Check, FolderInput, RefreshCw, SkipForward, Zap } from 'lucide-react'
+import { CalendarClock, Check, CheckCircle2, FolderInput, RefreshCw, Rocket, SkipForward, XCircle, Zap } from 'lucide-react'
 import type { AutomationItem, VideoMetadata } from '@shared/types'
 import { useApp, toast, message } from '../store'
 import { EmptyState, Field, PickerRow, StatusBadge, Switch } from '../components/ui'
 
+interface AutomationStatus {
+  watching: boolean
+  signedIn: boolean
+  upcoming: Array<{ iso: string; mode: 'longform' | 'short'; title: string }>
+}
+
 export default function AutomationPage(): React.JSX.Element {
-  const { settings, saveSettings, automationItems } = useApp()
+  const { settings, saveSettings, automationItems, ytAccount, setPage, uploadJobs } = useApp()
+  const [status, setStatus] = useState<AutomationStatus | null>(null)
+
+  useEffect(() => {
+    const refresh = (): void => void window.api.automationStatus().then(setStatus).catch(() => {})
+    refresh()
+    const timer = setInterval(refresh, 15_000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [automationItems, uploadJobs, settings])
+
   if (!settings) return <div />
   const auto = settings.automation
   const schedule = settings.schedule
+
+  // Autopilot = every piece of the hands-off pipeline enabled at once.
+  const autopilotOn =
+    auto.enabled && !!auto.inputFolder && auto.autoUpload && !auto.requireReview && schedule.enabled
+
+  const setAutopilot = (on: boolean): void => {
+    void saveSettings((d) => {
+      d.automation.enabled = on
+      d.automation.autoUpload = on
+      if (on) {
+        d.automation.requireReview = false
+        d.automation.mode = 'both'
+        d.schedule.enabled = true
+        if (d.schedule.shortsTimes.length === 0) d.schedule.shortsTimes = ['12:00']
+      }
+    })
+  }
 
   const pending = automationItems.filter((i) => !['uploaded', 'archived', 'skipped'].includes(i.status))
   const done = automationItems.filter((i) => ['uploaded', 'archived', 'skipped'].includes(i.status))
@@ -18,6 +51,45 @@ export default function AutomationPage(): React.JSX.Element {
       <div className="page-title">Automation</div>
       <div className="page-subtitle">
         Drop recordings into a folder — BeatFrame renders, generates metadata, uploads and archives them.
+      </div>
+
+      <div className="card" style={autopilotOn ? { borderColor: 'rgba(47,212,131,0.4)' } : undefined}>
+        <div className="card-title">
+          <Rocket size={16} /> Autopilot
+        </div>
+        <Switch
+          on={autopilotOn}
+          onChange={setAutopilot}
+          label="Fully hands-off publishing"
+          desc="Record → drop in the folder → BeatFrame renders a video AND a Short, uploads them, and YouTube publishes each at its daily slot time — even if this PC is off by then."
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, fontSize: 13 }}>
+          <ReadyRow ok={!!auto.inputFolder && auto.enabled} label={auto.inputFolder ? `Watching ${auto.inputFolder}` : 'Pick an input folder below'} />
+          <ReadyRow
+            ok={!!ytAccount}
+            label={ytAccount ? `YouTube: ${ytAccount.channelTitle}` : 'Connect your YouTube account'}
+            action={!ytAccount ? () => setPage('settings') : undefined}
+          />
+          <ReadyRow
+            ok={schedule.enabled}
+            label={`Daily slots: long-form ${schedule.longformTime}${schedule.shortsTimes.length > 0 ? ` · Shorts ${schedule.shortsTimes.join(', ')}` : ''}`}
+          />
+        </div>
+        {status && status.upcoming.length > 0 && (
+          <>
+            <hr className="divider" />
+            <div style={{ fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 7 }}>
+              <CalendarClock size={14} style={{ color: 'var(--accent-b)' }} /> Upcoming publishes
+            </div>
+            {status.upcoming.map((u) => (
+              <div key={u.iso + u.title} className="job-sub" style={{ padding: '3px 0' }}>
+                {new Date(u.iso).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {' · '}
+                {u.mode === 'short' ? 'Short' : 'Long-form'} · <span style={{ color: 'var(--text)' }}>{u.title}</span>
+              </div>
+            ))}
+          </>
+        )}
       </div>
 
       <div className="card">
@@ -107,7 +179,7 @@ export default function AutomationPage(): React.JSX.Element {
           on={schedule.enabled}
           onChange={(on) => void saveSettings((d) => void (d.schedule.enabled = on))}
           label="Publish on a daily schedule"
-          desc="Ready videos wait in the queue and upload at fixed times instead of immediately."
+          desc="Videos upload as soon as they're rendered and YouTube publishes each one at its slot time (scheduled videos always go live as Public). Your PC doesn't need to be on at publish time."
         />
         {schedule.enabled && (
           <div className="row" style={{ marginTop: 8 }}>
@@ -165,6 +237,20 @@ export default function AutomationPage(): React.JSX.Element {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function ReadyRow({ ok, label, action }: { ok: boolean; label: string; action?: () => void }): React.JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: ok ? 'var(--text-dim)' : 'var(--warning)' }}>
+      {ok ? <CheckCircle2 size={14} style={{ color: 'var(--success)' }} /> : <XCircle size={14} />}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {action && (
+        <button className="btn btn-sm" onClick={action}>
+          Fix
+        </button>
+      )}
     </div>
   )
 }

@@ -52,7 +52,8 @@ export async function probeVideo(filePath: string): Promise<VideoFileInfo> {
   }
 
   const video = parsed.streams?.find((s) => s.codec_type === 'video')
-  const audio = parsed.streams?.find((s) => s.codec_type === 'audio')
+  const audioStreams = parsed.streams?.filter((s) => s.codec_type === 'audio') ?? []
+  const audio = audioStreams[0]
   if (!video || !video.width || !video.height) {
     throw new ProbeError('No video stream found in this file.')
   }
@@ -70,6 +71,7 @@ export async function probeVideo(filePath: string): Promise<VideoFileInfo> {
     fps: parseFrameRate(video.avg_frame_rate ?? video.r_frame_rate ?? '0/1'),
     videoCodec: video.codec_name ?? 'unknown',
     audioCodec: audio?.codec_name ?? null,
+    audioStreamCount: audioStreams.length,
     sizeBytes: Number(parsed.format?.size ?? 0)
   }
 }

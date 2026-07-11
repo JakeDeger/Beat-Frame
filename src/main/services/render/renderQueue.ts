@@ -146,7 +146,20 @@ class RenderQueue {
 
       // 1. Probe input.
       const source = await probeVideo(req.videoPath)
-      this.appendLog(job, `Probed: ${source.width}x${source.height} @ ${source.fps}fps, ${Math.round(source.durationSec)}s`)
+      this.appendLog(
+        job,
+        `Probed: ${source.width}x${source.height} @ ${source.fps}fps, ${Math.round(source.durationSec)}s, ${source.audioStreamCount} audio track(s)`
+      )
+      if (source.audioStreamCount === 0) {
+        notify(
+          'warning',
+          'Recording has no audio',
+          `"${path.basename(req.videoPath)}" contains no audio track — the video will be silent. Check your recorder's audio settings.`,
+          true
+        )
+      } else if (source.audioStreamCount > 1) {
+        this.appendLog(job, `Mixing all ${source.audioStreamCount} audio tracks into the output`)
+      }
 
       // 2. Metadata lookups (player and score are optional and non-fatal).
       const map = await lookupMap(req.mapId)
@@ -226,8 +239,8 @@ class RenderQueue {
         backdrop = pickBackdropOffsets(source.durationSec, timeline)
         if (source.audioCodec) {
           const dur = source.durationSec
-          const introWin = timeline.introDurationSec + 0.5
-          const outroWin = (timeline.outroStartSec !== null ? timeline.durationSec - timeline.outroStartSec : 0) + 0.5
+          const introWin = timeline.introSec + 0.5
+          const outroWin = timeline.outroSec + 0.5
           const [loudIntro, loudOutro] = await Promise.all([
             findLoudestOffset(req.videoPath, {
               rangeStartSec: dur * 0.15,
@@ -235,7 +248,7 @@ class RenderQueue {
               windowSec: introWin,
               candidates: 5
             }),
-            timeline.outroStartSec !== null
+            timeline.outroSec > 0
               ? findLoudestOffset(req.videoPath, {
                   rangeStartSec: dur * 0.5,
                   rangeEndSec: dur * 0.92 + outroWin,

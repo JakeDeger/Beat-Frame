@@ -20,6 +20,7 @@ import { generateMetadata } from './metadata'
 import { renderQueue } from './render/renderQueue'
 import { uploadQueue } from './youtube/uploadQueue'
 import { isSignedIn } from './youtube/auth'
+import { localDateKey, nextFreeSlot, parseHhMm, slotTimesFor, type PublishSlot } from './scheduling'
 
 const log = createLogger('automation')
 
@@ -30,8 +31,17 @@ interface AutomationState {
   items: AutomationItem[]
   /** fingerprint -> processed; skips files we've already handled */
   processedFiles: Record<string, boolean>
-  /** "YYYY-MM-DD|slotId" -> fired */
+  /** "YYYY-MM-DD|slotId" -> fired (used only for empty-queue notifications) */
   firedSlots: Record<string, boolean>
+  /** publish-slot key -> claim details */
+  claimedSlots: Record<string, SlotClaim>
+}
+
+interface SlotClaim {
+  itemId: string
+  /** ISO publish time sent to YouTube */
+  iso: string
+  mode: VideoMode
 }
 
 class AutomationService {
@@ -44,8 +54,11 @@ class AutomationService {
     this.store = new JsonStore<AutomationState>('automation.json', {
       items: [],
       processedFiles: {},
-      firedSlots: {}
+      firedSlots: {},
+      claimedSlots: {}
     })
+    // Migration from pre-1.4 stores.
+    if (!this.store.get().claimedSlots) this.store.get().claimedSlots = {}
     // Items that were mid-render/upload when the app closed: re-evaluate.
     for (const item of this.items()) {
       if (item.status === 'rendering' || item.status === 'queued') {
@@ -281,15 +294,37 @@ class AutomationService {
   // Upload stage
   // -------------------------------------------------------------------------
 
-  /** Upload immediately unless the daily scheduler is responsible for timing. */
+  /**
+   * Ship a ready item. With the daily schedule enabled the upload starts
+   * IMMEDIATELY but claims the next free publish slot via YouTube's publishAt
+   * — publishing then happens server-side at the slot time, even if this
+   * computer is off. Without a schedule, the video goes out right away with
+   * the configured visibility.
+   */
   private maybeUploadNow(item: AutomationItem): void {
     const settings = getSettings()
     if (!settings.automation.autoUpload) return
-    if (settings.schedule.enabled) return // scheduler decides when
-    this.startUpload(item)
+    let slot: PublishSlot | null = null
+    if (settings.schedule.enabled) {
+      slot = nextFreeSlot(new Date(), settings.schedule, item.mode, new Set(Object.keys(this.claimedSlots())))
+      if (!slot) {
+        item.status = 'failed'
+        item.error =
+          item.mode === 'short'
+            ? 'No Shorts publish times are configured — add at least one on the Automation page.'
+            : 'No long-form publish time is configured on the Automation page.'
+        this.changed()
+        return
+      }
+    }
+    this.startUpload(item, slot)
   }
 
-  private startUpload(item: AutomationItem): void {
+  private claimedSlots(): Record<string, SlotClaim> {
+    return this.store!.get().claimedSlots
+  }
+
+  private startUpload(item: AutomationItem, slot: PublishSlot | null): void {
     if (!item.outputPath || !item.metadata) {
       item.status = 'failed'
       item.error = 'Missing rendered output or metadata.'
@@ -302,19 +337,37 @@ class AutomationService {
       return
     }
     const auto = getSettings().automation
+    if (slot) {
+      this.claimedSlots()[slot.key] = { itemId: item.id, iso: slot.date.toISOString(), mode: item.mode }
+      log.info(`claimed publish slot ${slot.key} for ${item.fileName}`)
+    }
     const job = uploadQueue.enqueue({
       videoPath: item.outputPath,
       thumbnailPath: item.mode === 'longform' ? item.thumbnailPath : null,
       metadata: item.metadata,
       privacy: auto.defaultPrivacy,
-      publishAt: null,
+      publishAt: slot ? slot.date.toISOString() : null,
       playlistId: auto.playlistId,
       isShort: item.mode === 'short'
     })
     item.uploadJobId = job.id
     item.status = 'uploading'
     item.updatedAt = Date.now()
+    if (slot) {
+      notify(
+        'info',
+        'Publish scheduled',
+        `"${item.metadata.title}" will go live ${slot.date.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.`
+      )
+    }
     this.changed()
+  }
+
+  private releaseClaims(itemId: string): void {
+    const claims = this.claimedSlots()
+    for (const [key, claim] of Object.entries(claims)) {
+      if (claim.itemId === itemId) delete claims[key]
+    }
   }
 
   private onUploadDone(job: UploadJob): void {
@@ -325,11 +378,28 @@ class AutomationService {
       item.updatedAt = Date.now()
       this.archive(item)
     } else if (job.status === 'failed') {
+      // Free the publish slot so the next ready video can take it; a retry
+      // claims a fresh slot.
+      this.releaseClaims(item.id)
       item.status = 'failed'
       item.error = job.error ?? 'Upload failed'
       item.updatedAt = Date.now()
     }
     this.changed()
+  }
+
+  /** Upcoming scheduled publishes (for the Automation status card). */
+  upcoming(): Array<{ iso: string; mode: VideoMode; title: string }> {
+    const now = Date.now()
+    const items = this.items()
+    return Object.values(this.claimedSlots())
+      .filter((c) => new Date(c.iso).getTime() > now)
+      .map((c) => {
+        const item = items.find((i) => i.id === c.itemId)
+        return { iso: c.iso, mode: c.mode, title: item?.metadata?.title ?? item?.fileName ?? 'Scheduled video' }
+      })
+      .sort((a, b) => a.iso.localeCompare(b.iso))
+      .slice(0, 8)
   }
 
   /** Move the original recording into the archive folder after upload. */
@@ -364,39 +434,35 @@ class AutomationService {
   // Daily schedule
   // -------------------------------------------------------------------------
 
+  /**
+   * Publishing itself is handled by YouTube via publishAt when videos are
+   * uploaded (see maybeUploadNow). This tick only warns when a daily slot
+   * passes with nothing claimed — i.e. the pipeline ran dry.
+   */
   private schedulerTick(): void {
     const settings = getSettings()
-    if (!settings.schedule.enabled) return
+    if (!settings.schedule.enabled || !settings.schedule.notifyOnEmptyQueue) return
 
     const now = new Date()
-    // Local date key so slots roll over at local midnight, matching slot times.
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    const slots: Array<{ id: string; time: string; mode: VideoMode }> = [
-      { id: 'longform', time: settings.schedule.longformTime, mode: 'longform' as VideoMode },
-      ...settings.schedule.shortsTimes.map((t, i) => ({ id: `short-${i}`, time: t, mode: 'short' as VideoMode }))
-    ]
-
+    const today = localDateKey(now)
     const state = this.store!.get()
+    const slots: Array<{ id: string; time: string; mode: VideoMode }> = [
+      ...slotTimesFor(settings.schedule, 'longform').map((s) => ({ ...s, mode: 'longform' as VideoMode })),
+      ...slotTimesFor(settings.schedule, 'short').map((s) => ({ ...s, mode: 'short' as VideoMode }))
+    ]
     for (const slot of slots) {
       const key = `${today}|${slot.id}`
-      if (state.firedSlots[key]) continue
-      if (!isTimeReached(now, slot.time)) continue
+      if (state.firedSlots[key] || state.claimedSlots[key]) continue
+      const hm = parseHhMm(slot.time)
+      if (!hm) continue
+      if (now.getHours() * 60 + now.getMinutes() < hm.h * 60 + hm.m) continue
       state.firedSlots[key] = true
-
-      const candidate = this.items()
-        .filter((i) => i.status === 'ready_to_upload' && i.mode === slot.mode)
-        .sort((a, b) => a.detectedAt - b.detectedAt)[0]
-      if (candidate) {
-        log.info(`schedule slot ${slot.id} firing for ${candidate.fileName}`)
-        this.startUpload(candidate)
-      } else if (settings.schedule.notifyOnEmptyQueue) {
-        notify(
-          'warning',
-          'Upload queue empty',
-          `No ${slot.mode === 'short' ? 'Short' : 'long-form video'} was ready for the ${slot.time} slot.`,
-          true
-        )
-      }
+      notify(
+        'warning',
+        'Publish slot missed',
+        `Nothing was scheduled for today's ${slot.time} ${slot.mode === 'short' ? 'Short' : 'long-form'} slot — drop a recording in the input folder.`,
+        true
+      )
     }
     this.persist()
   }
@@ -406,6 +472,9 @@ class AutomationService {
     const cutoff = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString().slice(0, 10)
     for (const key of Object.keys(state.firedSlots)) {
       if (key.slice(0, 10) < cutoff) delete state.firedSlots[key]
+    }
+    for (const [key, claim] of Object.entries(state.claimedSlots)) {
+      if (new Date(claim.iso).getTime() < Date.now() - 14 * 24 * 3600 * 1000) delete state.claimedSlots[key]
     }
     this.persist()
   }
@@ -429,15 +498,6 @@ class AutomationService {
   private persist(): void {
     this.store?.set(this.store.get())
   }
-}
-
-/** True once local time has passed HH:MM today. */
-export function isTimeReached(now: Date, hhmm: string): boolean {
-  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/)
-  if (!m) return false
-  const slotMinutes = Number(m[1]) * 60 + Number(m[2])
-  const nowMinutes = now.getHours() * 60 + now.getMinutes()
-  return nowMinutes >= slotMinutes
 }
 
 export const automation = new AutomationService()
