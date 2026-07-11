@@ -14,10 +14,11 @@ BeatFrame uploads through the official **YouTube Data API v3**. Google requires 
 
 ## 3. Configure the OAuth consent screen
 
-1. **APIs & Services → OAuth consent screen**.
+1. **APIs & Services → OAuth consent screen** (newer console: **Google Auth Platform → Audience**).
 2. User type: **External** → **Create**.
 3. Fill in the app name (`BeatFrame`) and your email; skip optional fields → **Save**.
-4. Under **Test users**, add your own Google account email. (Keeping the app in *Testing* mode is fine for personal use — refresh tokens for test users of a Desktop app do not expire.)
+4. Under **Test users**, click **+ Add users** and add the exact Google account email you'll sign in with. Skipping this causes **"Access blocked: BeatFrame has not completed the Google verification process" (Error 403: access_denied)** at sign-in.
+5. **Recommended for automation:** set **Publishing status → In production** ("Publish app" button). In *Testing* mode Google expires the sign-in after ~7 days, which breaks unattended daily publishing. Publishing without completing verification is fine for a personal tool — sign-in shows a one-time "Google hasn't verified this app" warning that you bypass with **Advanced → Go to BeatFrame (unsafe)**, and after that the connection doesn't expire.
 
 ## 4. Create the OAuth client
 
@@ -41,6 +42,7 @@ Tokens are stored on your computer encrypted with the operating system's credent
 
 ## Troubleshooting
 
-- **"Access blocked: app not verified"** — add your account under *Test users* (step 3.4) and sign in with that account.
+- **"Access blocked: BeatFrame has not completed the Google verification process" (403: access_denied)** — the signing-in account isn't on the *Test users* list. Add it (step 3.4), or publish the app (step 3.5), then retry — no waiting period.
+- **Sign-in expires every ~7 days** — the app is still in *Testing* mode; publish it (step 3.5).
 - **"Google did not return a refresh token"** — remove BeatFrame's access at <https://myaccount.google.com/permissions> and connect again.
 - **Quota exceeded** — wait for the reset, or request a quota increase in Google Cloud Console.
