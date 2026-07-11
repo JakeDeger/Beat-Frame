@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, UploadCloud, X } from 'lucide-react'
 import type { RenderJob, UploadPrivacy, VideoMetadata, YouTubePlaylist } from '@shared/types'
 import { useApp, toast, message } from '../store'
-import { Field } from './ui'
+import { Field, ListInput } from './ui'
 
 /**
  * Review-and-edit dialog shown before a manual upload from the render queue:
@@ -99,12 +99,8 @@ export function UploadDialog({ job, onClose }: { job: RenderJob; onClose: () => 
             <Field label="Description">
               <textarea className="input" rows={8} value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} />
             </Field>
-            <Field label="Tags" hint="Comma-separated.">
-              <input
-                className="input"
-                value={meta.tags.join(', ')}
-                onChange={(e) => setMeta({ ...meta, tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })}
-              />
+            <Field label="Tags" hint="Comma-separated — applied when you leave the field.">
+              <ListInput value={meta.tags} onCommit={(tags) => setMeta({ ...meta, tags })} />
             </Field>
             <div className="row">
               <Field label="Visibility">

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Cpu, FileVideo, KeyRound, ScrollText, Volume2, Youtube } from 'lucide-react'
 import type { EncoderSupport } from '@shared/types'
 import { useApp, toast, message } from '../store'
-import { Field, Switch } from '../components/ui'
+import { Field, ListInput, Switch } from '../components/ui'
 
 export default function SettingsPage(): React.JSX.Element {
   const { settings, saveSettings, ytAccount, pushToast } = useApp()
@@ -198,12 +198,11 @@ export default function SettingsPage(): React.JSX.Element {
         <div className="card-title">
           <KeyRound size={16} /> Metadata
         </div>
-        <Field label="Extra keywords" hint="Comma-separated. Merged into generated tags for every upload.">
-          <input
-            className="input"
-            value={settings.extraKeywords.join(', ')}
-            onChange={(e) => void saveSettings((d) => void (d.extraKeywords = e.target.value.split(',').map((k) => k.trim()).filter(Boolean)))}
+        <Field label="Extra keywords" hint="Comma-separated, merged into generated tags — applied when you leave the field.">
+          <ListInput
+            value={settings.extraKeywords}
             placeholder="beat saber montage, rhythm gaming"
+            onCommit={(keywords) => void saveSettings((d) => void (d.extraKeywords = keywords))}
           />
         </Field>
         <Field label="Description footer" hint="Appended to every generated description — channel links, socials, credits.">

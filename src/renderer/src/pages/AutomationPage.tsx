@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { CalendarClock, Check, CheckCircle2, FolderInput, RefreshCw, Rocket, SkipForward, XCircle, Zap } from 'lucide-react'
 import type { AutomationItem, VideoMetadata } from '@shared/types'
 import { useApp, toast, message } from '../store'
-import { EmptyState, Field, PickerRow, StatusBadge, Switch } from '../components/ui'
+import { EmptyState, Field, ListInput, PickerRow, StatusBadge, Switch } from '../components/ui'
 
 interface AutomationStatus {
   watching: boolean
@@ -191,20 +191,13 @@ export default function AutomationPage(): React.JSX.Element {
                 onChange={(e) => void saveSettings((d) => void (d.schedule.longformTime = e.target.value))}
               />
             </Field>
-            <Field label="Shorts upload times" hint="Comma-separated, e.g. 12:00, 17:30">
-              <input
-                className="input"
-                value={schedule.shortsTimes.join(', ')}
-                onChange={(e) =>
-                  void saveSettings(
-                    (d) =>
-                      void (d.schedule.shortsTimes = e.target.value
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter((s) => /^\d{1,2}:\d{2}$/.test(s)))
-                  )
-                }
-                placeholder="12:00"
+            <Field label="Shorts upload times" hint="Comma-separated 24h times, e.g. 12:00, 17:30 — applied when you leave the field.">
+              <ListInput
+                value={schedule.shortsTimes}
+                placeholder="12:00, 17:30"
+                validate={(t) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(t)}
+                invalidHint="use HH:MM (24h)"
+                onCommit={(times) => void saveSettings((d) => void (d.schedule.shortsTimes = times))}
               />
             </Field>
           </div>
@@ -358,12 +351,8 @@ function ItemRow({ item, compact }: { item: AutomationItem; compact?: boolean })
               onChange={(e) => setMeta({ ...meta, description: e.target.value })}
             />
           </Field>
-          <Field label="Tags" hint="Comma-separated.">
-            <input
-              className="input"
-              value={meta.tags.join(', ')}
-              onChange={(e) => setMeta({ ...meta, tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })}
-            />
+          <Field label="Tags" hint="Comma-separated — applied when you leave the field.">
+            <ListInput value={meta.tags} onCommit={(tags) => setMeta({ ...meta, tags })} />
           </Field>
           <button className="btn btn-primary" onClick={() => void approve()}>
             <Check size={15} /> Approve &amp; queue upload

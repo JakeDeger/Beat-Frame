@@ -1,7 +1,7 @@
 {
   "name": "beatframe-studio",
   "productName": "BeatFrame Studio",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Automatically edit Beat Saber gameplay recordings into polished YouTube videos and Shorts.",
   "main": "./out/main/index.js",
   "author": "BeatFrame Studio contributors",
