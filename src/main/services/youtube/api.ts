@@ -226,8 +226,11 @@ async function querySessionOffset(sessionUrl: string, totalBytes: number, fallba
   return fallback
 }
 
-export async function setThumbnail(videoId: string, thumbnailPath: string): Promise<void> {
-  if (!fs.existsSync(thumbnailPath)) return
+export async function setThumbnail(videoId: string, thumbnailPath: string, strict = false): Promise<void> {
+  if (!fs.existsSync(thumbnailPath)) {
+    if (strict) throw new YouTubeApiError('Thumbnail file not found.')
+    return
+  }
   const token = await getAccessToken()
   const data = fs.readFileSync(thumbnailPath)
   const res = await fetch(`${UPLOAD_API}/thumbnails/set?videoId=${videoId}`, {
@@ -236,8 +239,11 @@ export async function setThumbnail(videoId: string, thumbnailPath: string): Prom
     body: new Uint8Array(data)
   })
   if (!res.ok) {
-    // Custom thumbnails need a verified account — warn, don't fail the upload.
-    log.warn(`thumbnail set failed (${res.status}): ${await res.text()}`)
+    const text = await res.text()
+    // Custom thumbnails need a verified account — during uploads we warn and
+    // continue; explicit user actions (thumbnail refresh) surface the error.
+    if (strict) throw new YouTubeApiError(parseApiError(text, res.status), res.status)
+    log.warn(`thumbnail set failed (${res.status}): ${text}`)
   }
 }
 

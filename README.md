@@ -25,6 +25,11 @@ Import a recording, enter the BeatSaver map ID (usually auto-detected), pick *Lo
 - **BeatLeader / ScoreSaber** — paste either profile link; the player's display name and avatar appear on the intro card and in metadata.
 - **Generated YouTube metadata** — natural, searchable titles (< 100 chars), well-formatted descriptions with map/mapper credits, profile links and your custom footer (links/socials), deduplicated relevant tags under the 500-character limit, max 3 hashtags. No clickbait, no tag spam.
 
+### Channel growth (v1.5)
+- **Road to 1,000 subs dashboard** — live subscriber count with goal progress, 28-day pace and a projected date, plus per-video views, average watch % and subscribers gained for recent uploads (YouTube Analytics API).
+- **Actionable insights, not vibes** — transparent rules tied to knobs BeatFrame controls: weak long-form retention suggests a shorter intro (one-click apply), Shorts outconverting long-forms suggests a second daily Short slot (one-click), sparse upload cadence points at Autopilot, and underperforming videos get a **one-click thumbnail refresh** that regenerates the thumbnail in an alternate style and swaps it on YouTube.
+- Honest limits: YouTube does not expose impressions/CTR to third-party apps (Studio-only), so insights use what is measurable — views, watch %, and subscribers gained.
+
 ### YouTube
 - Secure Google sign-in (OAuth 2.0 + PKCE, loopback redirect). Tokens are encrypted with the OS keychain (`safeStorage`).
 - Resumable, chunked uploads with automatic retry and progress.

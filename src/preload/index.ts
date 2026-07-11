@@ -58,6 +58,8 @@ const api = {
   retryUpload: (id: string) => invoke(IPC.UPLOAD_RETRY, id),
   cancelUpload: (id: string) => invoke(IPC.UPLOAD_CANCEL, id),
   removeUpload: (id: string) => invoke(IPC.UPLOAD_REMOVE, id),
+  ytInsights: () => invoke(IPC.YT_INSIGHTS),
+  ytRefreshThumbnail: (videoId: string, mapId: string) => invoke<string>(IPC.YT_REFRESH_THUMBNAIL, videoId, mapId),
 
   // automation
   automationItems: () => invoke(IPC.AUTOMATION_ITEMS),

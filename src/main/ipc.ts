@@ -14,6 +14,7 @@ import { renderCardPreview, type PreviewKind } from './services/render/preview'
 import { uploadQueue } from './services/youtube/uploadQueue'
 import { startSignIn, signOut, isSignedIn } from './services/youtube/auth'
 import { getMyChannel, listMyPlaylists } from './services/youtube/api'
+import { getChannelInsights, refreshThumbnail } from './services/youtube/growth'
 import { automation } from './services/automation'
 import { checkForUpdates } from './services/updates'
 
@@ -122,6 +123,8 @@ export function registerIpcHandlers(): void {
   handle(IPC.UPLOAD_RETRY, (id: string) => uploadQueue.retry(id))
   handle(IPC.UPLOAD_CANCEL, (id: string) => uploadQueue.cancel(id))
   handle(IPC.UPLOAD_REMOVE, (id: string) => uploadQueue.remove(id))
+  handle(IPC.YT_INSIGHTS, () => getChannelInsights())
+  handle(IPC.YT_REFRESH_THUMBNAIL, (videoId: string, mapId: string) => refreshThumbnail(videoId, mapId))
 
   // --- automation ---
   handle(IPC.AUTOMATION_ITEMS, () => automation.items())

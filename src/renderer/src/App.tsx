@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  BarChart3,
   Home,
   ListVideo,
   Palette,
@@ -13,6 +14,7 @@ import HomePage from './pages/HomePage'
 import QueuePage from './pages/QueuePage'
 import AutomationPage from './pages/AutomationPage'
 import UploadsPage from './pages/UploadsPage'
+import ChannelPage from './pages/ChannelPage'
 import TemplatesPage from './pages/TemplatesPage'
 import SettingsPage from './pages/SettingsPage'
 
@@ -21,6 +23,7 @@ const NAV: Array<{ id: PageId; label: string; icon: typeof Home }> = [
   { id: 'queue', label: 'Render Queue', icon: ListVideo },
   { id: 'automation', label: 'Automation', icon: Zap },
   { id: 'uploads', label: 'Uploads', icon: UploadCloud },
+  { id: 'channel', label: 'Channel', icon: BarChart3 },
   { id: 'templates', label: 'Templates', icon: Palette },
   { id: 'settings', label: 'Settings', icon: SettingsIcon }
 ]
@@ -86,6 +89,7 @@ export default function App(): React.JSX.Element {
         {page === 'queue' && <QueuePage />}
         {page === 'automation' && <AutomationPage />}
         {page === 'uploads' && <UploadsPage />}
+        {page === 'channel' && <ChannelPage />}
         {page === 'templates' && <TemplatesPage />}
         {page === 'settings' && <SettingsPage />}
       </main>

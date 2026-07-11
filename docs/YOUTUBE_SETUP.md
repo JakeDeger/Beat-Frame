@@ -34,6 +34,10 @@ BeatFrame uploads through the official **YouTube Data API v3**. Google requires 
 
 Tokens are stored on your computer encrypted with the operating system's credential store, and are only ever sent to Google.
 
+## Upgrading from v1.4 or earlier
+
+v1.5 adds the read-only **YouTube Analytics** permission for the Channel insights page. Existing connections keep uploading fine, but insights will ask you to reconnect once: **Settings → YouTube → Disconnect → Connect account**.
+
 ## Quota notes
 
 - The free daily quota is 10,000 units; one upload costs ~1,600 units → about **6 uploads/day**. The quota resets at midnight Pacific Time.

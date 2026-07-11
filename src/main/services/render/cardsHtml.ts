@@ -247,7 +247,10 @@ export function outroCardHtml(d: CardData): string {
 // Thumbnail (opaque, 1280x720)
 // ---------------------------------------------------------------------------
 
-export function thumbnailHtml(d: CardData): string {
+export type ThumbnailVariant = 'classic' | 'bold'
+
+export function thumbnailHtml(d: CardData, variant: ThumbnailVariant = 'classic'): string {
+  if (variant === 'bold') return boldThumbnailHtml(d)
   const t = d.template
   const bg = d.coverDataUri
     ? `<img src="${d.coverDataUri}" style="position:absolute;inset:-5%;width:110%;height:110%;object-fit:cover;filter:blur(28px) brightness(0.45) saturate(1.3);">`
@@ -269,6 +272,35 @@ export function thumbnailHtml(d: CardData): string {
         ${d.playerName ? `<div style="font-size:3.6vh;font-weight:700;margin-top:2.4vh;color:rgba(255,255,255,0.92);text-shadow:0 0.5vh 2vh rgba(0,0,0,0.8);">${escapeHtml(d.playerName)}</div>` : ''}
       </div>
     </div>
+  </div>
+</body></html>`
+}
+
+/**
+ * Alternate thumbnail composition used by the one-click "refresh thumbnail"
+ * growth action: full-bleed sharp cover art, heavy bottom gradient, huge
+ * title — visually distinct from the classic split layout so a swap is a
+ * genuinely different creative.
+ */
+function boldThumbnailHtml(d: CardData): string {
+  const t = d.template
+  const bg = d.coverDataUri
+    ? `<img src="${d.coverDataUri}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">`
+    : `<div style="position:absolute;inset:0;background:linear-gradient(135deg,${t.accentColor},${t.accentColorB});"></div>`
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${baseCss(t, false)}</style></head>
+<body>
+  <div style="width:100vw;height:100vh;position:relative;overflow:hidden;background:${t.backgroundColor};">
+    ${bg}
+    <div style="position:absolute;inset:0;background:linear-gradient(180deg, rgba(5,7,12,0.05) 35%, rgba(5,7,12,0.92) 100%);"></div>
+    <div style="position:absolute;left:6vh;right:6vh;bottom:6vh;">
+      <div style="display:inline-block;padding:0.9vh 2.4vh;border-radius:99em;font-size:3vh;font-weight:800;margin-bottom:2.2vh;
+                  background:linear-gradient(90deg,${t.accentColor},${t.accentColorB});color:#fff;box-shadow:0 1.5vh 4vh rgba(0,0,0,0.5);">
+        ${escapeHtml(d.difficulty ?? 'Beat Saber')}</div>
+      <div style="font-size:11vh;font-weight:900;line-height:0.98;letter-spacing:-0.01em;text-shadow:0 1vh 4vh rgba(0,0,0,0.9);
+                  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(d.songTitle)}</div>
+      ${d.playerName ? `<div style="font-size:3.6vh;font-weight:700;margin-top:1.8vh;color:rgba(255,255,255,0.95);text-shadow:0 0.5vh 2vh rgba(0,0,0,0.9);">${escapeHtml(d.playerName)}${d.accuracy ? ` · ${escapeHtml(d.accuracy)}` : ''}</div>` : ''}
+    </div>
+    <div style="position:absolute;left:0;right:0;top:0;height:1vh;background:linear-gradient(90deg,${t.accentColor},${t.accentColorB});"></div>
   </div>
 </body></html>`
 }

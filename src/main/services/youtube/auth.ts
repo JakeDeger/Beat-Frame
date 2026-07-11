@@ -12,7 +12,12 @@ const log = createLogger('yt-auth')
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
-const SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube']
+const SCOPES = [
+  'https://www.googleapis.com/auth/youtube.upload',
+  'https://www.googleapis.com/auth/youtube',
+  // Channel growth insights (views, watch %, subscribers gained).
+  'https://www.googleapis.com/auth/yt-analytics.readonly'
+]
 
 export class AuthError extends Error {
   constructor(message: string) {

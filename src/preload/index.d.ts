@@ -63,6 +63,44 @@ export interface Api {
   cancelUpload(id: string): Promise<void>
   removeUpload(id: string): Promise<void>
 
+  ytInsights(): Promise<{
+    overview: {
+      channelId: string
+      channelTitle: string
+      subscriberCount: number
+      totalViews: number
+      videoCount: number
+      subsGained28d: number
+      views28d: number
+      videos: Array<{
+        videoId: string
+        title: string
+        publishedAt: string
+        durationSec: number
+        isShort: boolean
+        privacyStatus: string
+        views: number
+        averageViewPercentage: number | null
+        subscribersGained: number | null
+        mapId: string | null
+        thumbnailUrl: string
+      }>
+    }
+    insights: Array<{
+      id: string
+      level: 'good' | 'suggestion' | 'warning'
+      title: string
+      detail: string
+      action?:
+        | { kind: 'set-intro-duration'; seconds: number }
+        | { kind: 'set-mode-both' }
+        | { kind: 'add-short-slot'; time: string }
+        | { kind: 'refresh-thumbnail'; videoId: string; mapId: string }
+    }>
+    subscriberGoal: number
+  }>
+  ytRefreshThumbnail(videoId: string, mapId: string): Promise<string>
+
   automationItems(): Promise<AutomationItem[]>
   automationStatus(): Promise<{
     watching: boolean

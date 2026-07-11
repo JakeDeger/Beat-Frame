@@ -66,7 +66,15 @@ export async function lookupPlayer(profileUrl: string): Promise<PlayerProfile> {
   let profile: PlayerProfile
   try {
     if (parsed.platform === 'beatleader') {
-      const p = await fetchJson<BeatLeaderPlayer>(`https://api.beatleader.xyz/player/${encodeURIComponent(parsed.id)}`)
+      // .com is BeatLeader's primary domain; .xyz kept as a fallback.
+      let p: BeatLeaderPlayer
+      try {
+        p = await fetchJson<BeatLeaderPlayer>(`https://api.beatleader.com/player/${encodeURIComponent(parsed.id)}`, { retries: 1 })
+      } catch (first) {
+        if (first instanceof HttpError && first.status === 404) throw first
+        log.warn('api.beatleader.com failed, trying .xyz', first instanceof Error ? first.message : first)
+        p = await fetchJson<BeatLeaderPlayer>(`https://api.beatleader.xyz/player/${encodeURIComponent(parsed.id)}`, { retries: 1 })
+      }
       profile = {
         platform: 'beatleader',
         id: p.id ?? parsed.id,
@@ -74,7 +82,7 @@ export async function lookupPlayer(profileUrl: string): Promise<PlayerProfile> {
         avatarUrl: p.avatar ?? '',
         country: p.country ?? '',
         rank: p.rank ?? 0,
-        profileUrl: `https://beatleader.xyz/u/${p.id ?? parsed.id}`
+        profileUrl: `https://beatleader.com/u/${p.id ?? parsed.id}`
       }
     } else {
       const p = await fetchJson<ScoreSaberPlayer>(
@@ -92,11 +100,15 @@ export async function lookupPlayer(profileUrl: string): Promise<PlayerProfile> {
     }
   } catch (err) {
     if (err instanceof PlayerLookupError) throw err
+    const site = parsed.platform === 'beatleader' ? 'BeatLeader' : 'ScoreSaber'
     if (err instanceof HttpError && err.status === 404) {
-      throw new PlayerLookupError(`No ${parsed.platform === 'beatleader' ? 'BeatLeader' : 'ScoreSaber'} player found for that link.`)
+      throw new PlayerLookupError(
+        `${site} has no player "${parsed.id}" — open your profile in a browser and copy the URL exactly.`
+      )
     }
+    const detail = err instanceof HttpError ? `HTTP ${err.status}` : err instanceof Error ? err.message.split('\n')[0] : 'network error'
     throw new PlayerLookupError(
-      `Could not load the player profile (${err instanceof Error ? err.message : 'network error'}).`
+      `Could not reach ${site} (${detail}). Check your internet connection or firewall, then try again.`
     )
   }
 
@@ -156,17 +168,18 @@ export async function fetchBeatLeaderScore(
   characteristic = 'Standard'
 ): Promise<PlayerScore | null> {
   if (!playerId || !mapHash) return null
-  const url = `https://api.beatleader.xyz/score/${encodeURIComponent(playerId)}/${encodeURIComponent(mapHash)}/${encodeURIComponent(difficultyToBeatLeader(difficulty))}/${encodeURIComponent(characteristic)}`
-  try {
-    const score = await fetchJson<BeatLeaderScore>(url, { retries: 0, timeoutMs: 10_000 })
-    if (typeof score.accuracy !== 'number' || score.accuracy <= 0) return null
-    return { accuracy: score.accuracy, rank: score.rank ?? 0 }
-  } catch (err) {
-    if (!(err instanceof HttpError && err.status === 404)) {
-      log.warn('score lookup failed', err instanceof Error ? err.message : err)
+  const pathPart = `score/${encodeURIComponent(playerId)}/${encodeURIComponent(mapHash)}/${encodeURIComponent(difficultyToBeatLeader(difficulty))}/${encodeURIComponent(characteristic)}`
+  for (const base of ['https://api.beatleader.com', 'https://api.beatleader.xyz']) {
+    try {
+      const score = await fetchJson<BeatLeaderScore>(`${base}/${pathPart}`, { retries: 0, timeoutMs: 10_000 })
+      if (typeof score.accuracy !== 'number' || score.accuracy <= 0) return null
+      return { accuracy: score.accuracy, rank: score.rank ?? 0 }
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 404) return null // player simply has no score
+      log.warn(`score lookup failed via ${base}`, err instanceof Error ? err.message : err)
     }
-    return null
   }
+  return null
 }
 
 /** Format a 0..1 accuracy as a display label, e.g. 0.97423 -> "97.42%". */

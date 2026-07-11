@@ -8,7 +8,7 @@ import type {
   YouTubeAccount
 } from '@shared/types'
 
-export type PageId = 'home' | 'queue' | 'automation' | 'uploads' | 'templates' | 'settings'
+export type PageId = 'home' | 'queue' | 'automation' | 'uploads' | 'channel' | 'templates' | 'settings'
 
 interface AppState {
   page: PageId

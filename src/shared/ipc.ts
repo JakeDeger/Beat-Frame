@@ -48,6 +48,8 @@ export const IPC = {
   UPLOAD_RETRY: 'upload:retry',
   UPLOAD_CANCEL: 'upload:cancel',
   UPLOAD_REMOVE: 'upload:remove',
+  YT_INSIGHTS: 'yt:insights',
+  YT_REFRESH_THUMBNAIL: 'yt:refreshThumbnail',
 
   // Automation
   AUTOMATION_STATUS: 'automation:status',

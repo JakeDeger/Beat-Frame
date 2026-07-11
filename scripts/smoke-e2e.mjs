@@ -46,7 +46,7 @@ const shoot = async (name) => {
 }
 
 // --- 1. all pages ---
-const pages = ['Home', 'Render Queue', 'Automation', 'Uploads', 'Templates', 'Settings']
+const pages = ['Home', 'Render Queue', 'Automation', 'Uploads', 'Channel', 'Templates', 'Settings']
 for (const label of pages) {
   await page.click(`button.nav-item:has-text("${label}")`)
   await page.waitForTimeout(700)
